@@ -1,0 +1,13 @@
+# Automated dependency updates — pairs with the flow security gate (sanity-check CVE audit).
+# flow-init sets terraform from the detected stack (npm / pip / gomod / bundler / cargo / …).
+version: 2
+updates:
+  - package-ecosystem: "terraform"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

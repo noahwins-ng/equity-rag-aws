@@ -1,0 +1,108 @@
+# Workflow profile — project-specific nouns read by the flow workflow suite.
+# Convention: an empty ("") value means "this project has no such concept — skip that step".
+# Greenfield note: verify.* is intentionally empty until the Terraform + Python toolchain
+# lands (QNT-266); derive it then with flow-tailor. Do not hand-fill commands that can't run.
+
+project:
+  name: "Equity RAG on AWS"
+  default_branch: main
+
+tracker:
+  kind: linear
+  identifier_regex: "QNT-\\d+"
+  identifier_example: "QNT-266"
+  adapter: "adapters/linear.sh"
+  get_issue:       "{adapter} issue get {id}"
+  set_in_progress: "{adapter} issue status {id} 'In Progress'"
+  set_in_review:   "{adapter} issue status {id} 'In Review'"
+  set_done:        "{adapter} issue status {id} 'Done'"
+  add_comment:     "{adapter} issue comment {id}"
+  next_issue:      ""
+  branch_from_issue: "branchName"
+  branch_template:   "noahwinsdev/{id_lower}-{slug}"
+
+vcs:
+  commit_format: "{id}: {type}({scope}): {description}"
+  wip_commit:    "{id}: {type}({scope}): wip - {description}"
+  commit_hook_note: "Plain '{id}: wip:' is rejected — type(scope) is required (.githooks/commit-msg)."
+  pr_title:  "{id}: {title}"
+  pr_body_closes: "Closes {id}"
+  pr_footer: ""   # no tool-generated footers
+
+verify:
+  # TO DERIVE at QNT-266 via flow-tailor, once terraform/ and lambda code exist.
+  # Expected shape: lint=terraform fmt -check + ruff, types=pyright, test=pytest (offline).
+  lint:   ""
+  format: ""
+  types:  ""
+  test:   ""
+  test_note: ""
+  test_targeted: ""
+  security: ""
+
+deploy:
+  # This project has NO persistent deploy: the stack is ephemeral (terraform apply for the
+  # demo window, terraform destroy after). Ship ends at merge; the three prod gates are
+  # profile-skipped by design. "Deploy verification" here = the QNT-270 eval against the
+  # live endpoint + the QNT-272 teardown verification, both manual demo steps.
+  ci_status:    "gh pr checks {pr} --watch"
+  merge:        "gh pr merge {pr} --squash --delete-branch"
+  deployed_sha: ""
+  runtime_id:   ""
+  health:       ""
+  rollback:     ""
+
+docs:
+  plan:          "docs/project-plan.md"
+  spec:          "docs/PRD.md"          # the PRD is the spec (committed by choice)
+  patterns:      ""                     # none yet; add when recipes emerge
+  architecture:  "docs/architecture/system-overview.md"
+  decisions_dir: "docs/decisions"
+  adr_template:  "docs/decisions/TEMPLATE.md"
+  adr_index:     "docs/INDEX.md"
+  retros_dir:    "docs/retros"
+  ac_templates:  "docs/AC-templates.md"
+
+architecture_rules: |
+  - Everything lives in Terraform. No console-created resources — terraform destroy must
+    return the account to zero (teardown safety is the USD 20 cap's real enforcement).
+  - Zero idle-billed resources: no NAT gateway, no provisioned concurrency, no always-on
+    compute or search clusters. Pay-per-request only.
+  - The snapshot seam is read-only input: doc_id (Qdrant point id) is preserved verbatim
+    as the vector key; this repo never re-derives or mutates identity (see docs/PRD.md §5).
+  - Retrieval eval results are reported PER-CORPUS (news vs earnings), never blended.
+  - Region is pinned to us-west-2 (co-locates all Bedrock models + S3 Vectors).
+
+ac_execution_keywords:
+  - returns
+  - responds
+  - deployed
+  - applied
+  - destroyed
+  - visible
+  - indexed
+  - scored
+  - "empty state list"
+  - "Cost Explorer"
+
+review:
+  fresh_eyes_agent: "flow:flow-code-reviewer"
+
+cadence:
+  team:    "Quant"
+  project: "Equity RAG on AWS"
+  active_cycle:   "{adapter} cycle active '{team}'"
+  status_update:  "{adapter} project status-update '{project}'"
+
+taxonomy:
+  team_id: "6da338db-71b2-4d14-9519-8a19231e1ccd"   # Quant
+  labels:
+    - ai
+    - infra
+  ops_milestone: ""            # no perpetual ops milestone — project is ephemeral by design
+  perpetual_milestones: []
+  health_on_track_min: 0.50
+  health_at_risk_min:  0.25
+
+audit:
+  host: ""   # no server — serverless + ephemeral; server-audit disabled

@@ -1,0 +1,30 @@
+# Terraform — state can contain secrets/resource ids; never commit
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!example.tfvars
+.terraform.lock.hcl.backup
+crash.log
+
+# Environment / credentials
+.env
+.env.*
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+
+# Snapshot data (large; fetched from the monorepo export, not versioned here)
+data/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Agent harness
+.claude/
+CLAUDE.md
