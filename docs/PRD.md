@@ -74,22 +74,29 @@ This repo consumes a frozen export produced by the monorepo (QNT-265, not yet sh
 **this section is the spec it implements against**). Build-time data handoff only; zero
 code coupling.
 
-**Snapshot bundle** (versioned, checksummed). The snapshot is frozen at **chunk
-granularity, sourced from the Qdrant payloads**, so the exact embedded text and its id
-travel together (a doc-level export would force this repo to reproduce the monorepo's
-chunker to join labels back to text).
+**Snapshot bundle** (versioned, checksummed). The snapshot is frozen at each corpus's
+**native Qdrant granularity, sourced from the Qdrant payloads**, so the exact embedded
+text and its id travel together (a doc-level export would force this repo to reproduce the
+monorepo's chunker to join labels back to text). The two corpora do **not** share one
+granularity or one point-id formula:
 
-- `corpus/{news,earnings}.jsonl` — one row per chunk:
-  - `point_id` — **the Qdrant point id, derived as blake2b(ticker:doc_id:chunk_index)**.
-    This is the identity the qrels key on and MUST be preserved verbatim as the
-    S3 Vectors key.
-  - `doc_id` — release/article-level id, blake2b(source url). Groups chunks back into
-    documents; *not* the eval identity.
-  - `chunk_index` — position within the document.
+- **earnings** (`equity_earnings`) is **chunk-level** — one row per chunk, with
+  `chunk_index` + `section`.
+- **news** (`equity_news`) is **article-level** — one row per (ticker, article), no
+  `chunk_index`, no `section`; `text` is the embedded headline + body.
+
+- `corpus/{news,earnings}.jsonl` — one row per Qdrant point:
+  - `point_id` — **the Qdrant point id, derived per corpus**: earnings
+    `blake2b(ticker:doc_id:chunk_index)`, news `blake2b(ticker:url_id)`. This is the
+    identity the qrels key on and MUST be preserved verbatim as the S3 Vectors key.
+  - `doc_id` — release/article-level id that groups rows back into documents; *not* the
+    eval identity.
+  - `chunk_index` — position within the document. **Earnings only** (absent for news).
   - `corpus` — `news` | `earnings`. Every row and every relevance label is corpus-tagged
     so the cloud eval can score per-corpus; without the tag the regime finding is
     invisible downstream.
-  - `ticker`, `date`, `section`, `text` (the exact embedded chunk text), `source_url`.
+  - `ticker`, `date`, `text` (the exact embedded text), `source_url`, and `section`
+    (**earnings only**).
   - **Text, not vectors.** Vectors are recomputed with Titan V2 — re-embedding into a
     different space is the point of the experiment.
 - `labels/retrieval.yaml` — the 51 topics (query + expected corpus + ticker scope).
