@@ -108,6 +108,13 @@ granularity or one point-id formula:
 where rerank pays); earnings = the *control* corpus (dense-saturated). The cloud eval is
 a designed two-arm comparison, not an accident.
 
+**Staging path (decided 2026-07-12, mirrored in QNT-265):** the export script takes the
+output directory as a CLI argument (no hardcoded sibling-repo path); the canonical
+staging location is this repo's `data/` folder, which stays gitignored. Neither repo
+commits the bundle — news rows carry vendor-sourced (Finnhub) article bodies and this
+repo is public; the durable home is S3 (QNT-267). Integrity across the handoff is
+carried by the manifest checksums, not by where the files sit.
+
 ## 6. Architecture
 
 ```
