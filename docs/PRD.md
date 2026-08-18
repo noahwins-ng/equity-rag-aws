@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Draft v1 |
-| **Date** | 2026-07-10 |
+| **Status** | Active — QNT-265 (producer seam) shipped, QNT-266..272 not yet started |
+| **Date** | 2026-07-10 (last reviewed 2026-08-15) |
 | **Tracker** | Linear project *Equity RAG on AWS* (Quant team), QNT-266..272 |
 | **Parent project** | [equity-data-agent](https://github.com/noahwins-ng/equity-data-agent) (Track 2: RAG depth + eval) |
 | **Budget** | USD 20 hard cap, then `terraform destroy` |
@@ -70,9 +70,9 @@ one stack.
 
 ## 5. Input: the snapshot seam (contract with QNT-265)
 
-This repo consumes a frozen export produced by the monorepo (QNT-265, not yet shipped —
-**this section is the spec it implements against**). Build-time data handoff only; zero
-code coupling.
+This repo consumes a frozen export produced by the monorepo (QNT-265, **shipped** PR #539,
+2026-07-12 — **this section is the spec it implemented against**). Build-time data handoff
+only; zero code coupling.
 
 **Snapshot bundle** (versioned, checksummed). The snapshot is frozen at each corpus's
 **native Qdrant granularity, sourced from the Qdrant payloads**, so the exact embedded
@@ -190,7 +190,7 @@ Dependency: **QNT-265 (monorepo) ships the snapshot first** — implemented agai
 
 | # | Ticket | Scope | Depends on |
 |---|---|---|---|
-| 0 | QNT-265 *(monorepo)* | Snapshot export (producer side of §5) | — |
+| 0 | QNT-265 *(monorepo)* | Snapshot export (producer side of §5) — **shipped, PR #539** | — |
 | 1 | QNT-266 | Repo scaffold + Terraform skeleton + USD 20 budget guard | — |
 | 2 | QNT-267 | Frozen corpus snapshot into S3 | 265, 266 |
 | 3 | QNT-268 | Index job — Titan embeddings into S3 Vectors | 267 |
