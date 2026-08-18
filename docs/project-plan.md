@@ -8,16 +8,32 @@ is what a reader who opens the repo cold uses to understand what was built and w
 > Item format: `- [ ] <ISSUE-ID>: <short title>` with optional sub-bullets for deliverables or a
 > `**Triggered by:**` note explaining why the ticket exists.
 
-## Phase 0 — <name>
+## Phase 0 — Foundation
 
-- [ ] <ISSUE-ID>: <short title>
-  - <deliverable or context sub-bullet>
-- [ ] <ISSUE-ID>: <short title>
+- [ ] QNT-266: repo scaffold + Terraform skeleton + USD 20 budget guard
+  - Terraform skeleton pinned to us-west-2; state backend
+  - AWS Budgets alerts at USD 10 (warning) / USD 20 (hard cap)
+  - README scaffold: Hetzner → AWS mapping table + dense-vs-hybrid tradeoff note
 
-## Phase 1 — <name>
+## Phase 1 — Corpus & Index
 
-- [ ] <ISSUE-ID>: <short title>
+- [ ] QNT-267: frozen corpus snapshot into S3
+  - Consumes QNT-265 (monorepo, shipped PR #539) — corpus/{news,earnings}.jsonl, labels, manifest
+  - `point_id` (not `doc_id`) preserved verbatim as the join/identity key (PRD §5)
+- [ ] QNT-268: index job — Bedrock Titan embeddings into S3 Vectors
+  - One S3 Vectors index per corpus (news, earnings); vectors keyed by `point_id`
 
-## Ops & Reliability  <!-- perpetual milestone: hardening that cuts across phases -->
+## Phase 2 — Retrieval & Eval
 
-- [ ] <ISSUE-ID>: <short title>
+- [ ] QNT-269: retrieval service — Lambda + API Gateway, S3 Vectors + Bedrock rerank + gpt-oss-20b
+  - Per-corpus routing; no NAT Gateway / OpenSearch / Aurora (cost-trap checklist)
+- [ ] QNT-270: recycle retrieval eval against the cloud endpoint
+  - Fills the PRD §7 in-repo-vs-cloud comparison table, per corpus
+  - **Triggered by:** confirming or refuting H1/H2/H3 (PRD §7) is the project's core deliverable
+
+## Phase 3 — Observability & Demo Wrap-up
+
+- [ ] QNT-271: CloudWatch logs + metrics for the retrieval service
+- [ ] QNT-272: demo recording + verified teardown + README
+  - Stand-up → query → eval → teardown video; verified empty Cost Explorer
+  - Repo flipped PUBLIC after a pre-publish secrets/account-id sweep
