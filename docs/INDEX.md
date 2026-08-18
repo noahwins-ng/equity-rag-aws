@@ -4,7 +4,7 @@
 - [System overview](architecture/system-overview.md) — how the system works now
 
 ## Planning
-- [Requirements](project-requirement.md) — what & why, per phase
+- [Requirements](PRD.md) — what & why (the PRD is the spec, per profile.docs.spec)
 - [Plan](project-plan.md) — execution tracker
 
 ## Decisions (ADRs)
