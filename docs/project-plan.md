@@ -10,7 +10,7 @@ is what a reader who opens the repo cold uses to understand what was built and w
 
 ## Phase 0 — Foundation
 
-- [ ] QNT-266: repo scaffold + Terraform skeleton + USD 20 budget guard
+- [x] QNT-266: repo scaffold + Terraform skeleton + USD 20 budget guard
   - Terraform skeleton pinned to us-west-2; state backend
   - AWS Budgets alerts at USD 10 (warning) / USD 20 (hard cap)
   - README scaffold: Hetzner → AWS mapping table + dense-vs-hybrid tradeoff note
