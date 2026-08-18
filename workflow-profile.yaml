@@ -68,8 +68,10 @@ architecture_rules: |
     return the account to zero (teardown safety is the USD 20 cap's real enforcement).
   - Zero idle-billed resources: no NAT gateway, no provisioned concurrency, no always-on
     compute or search clusters. Pay-per-request only.
-  - The snapshot seam is read-only input: doc_id (Qdrant point id) is preserved verbatim
-    as the vector key; this repo never re-derives or mutates identity (see docs/PRD.md §5).
+  - The snapshot seam is read-only input: point_id (the Qdrant point id) is preserved
+    verbatim as the vector key; this repo never re-derives or mutates identity (see
+    docs/PRD.md §5). doc_id is a document-grouping id, not the eval identity — don't confuse
+    the two.
   - Retrieval eval results are reported PER-CORPUS (news vs earnings), never blended.
   - Region is pinned to us-west-2 (co-locates all Bedrock models + S3 Vectors).
 
