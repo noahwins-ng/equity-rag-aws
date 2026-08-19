@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Active — QNT-265 (producer seam) shipped, QNT-266..272 not yet started |
-| **Date** | 2026-07-10 (last reviewed 2026-08-15) |
+| **Date** | 2026-07-10 (last reviewed 2026-08-19) |
 | **Tracker** | Linear project *Equity RAG on AWS* (Quant team), QNT-266..272 |
 | **Parent project** | [equity-data-agent](https://github.com/noahwins-ng/equity-data-agent) (Track 2: RAG depth + eval) |
 | **Budget** | USD 20 hard cap, then `terraform destroy` |
@@ -176,10 +176,27 @@ refutation is a genuinely interesting substrate effect and gets written up as su
   backstopped by an AWS Budgets alert at USD 20 (and a warning threshold at USD 10).
 - **Zero idle-billed resources** is an architecture rule: no NAT gateway, no provisioned
   concurrency, no OpenSearch, no always-on compute. Everything is pay-per-request.
-- **Expected spend (estimates — verify real pricing during QNT-266):** corpus is small
-  (thousands of chunks): Titan embedding + S3 Vectors storage/query = cents; Bedrock
-  rerank on 51 topics × a handful of eval sweeps = low single dollars; Lambda/API GW
-  within free tier. The cap has generous headroom for demo retakes.
+- **Expected spend (verified against current AWS pricing, 2026-08-19 — supersedes the
+  original estimate):**
+
+  | Line item | Rate (us-west-2) | This project's scale | Est. cost |
+  |---|---|---|---|
+  | Titan Embeddings V2 (index build + re-runs) | $0.02 / 1M input tokens | ~5–10M tokens (thousands of chunks, a few re-runs) | ~$0.10–0.20 |
+  | S3 Vectors storage | $0.06 / GB-month | <0.1 GB | ~$0.01 |
+  | S3 Vectors writes (PUT) | $0.20 / GB | <0.1 GB | ~$0.02 |
+  | S3 Vectors queries | $2.50/1M queries + $0.004/TB processed (first 100K vectors) + $0.01/GB returned (first 512KB/query free) | few hundred queries, tiny index | ~$0.05 |
+  | Cohere Rerank 3.5 | $2.00 / 1,000 search units (1 unit = ≤100 doc chunks reranked) | 51 topics × several eval sweeps + dev iteration, ~500–1,500 units | **~$1–3 — dominant line item** |
+  | gpt-oss-20b (optional generation) | $0.07 / 1M input, $0.30 / 1M output tokens | light spot-check use only | ~$0.05 |
+  | Lambda | 1M requests + 400K GB-seconds/month free (perpetual) | hundreds–low thousands of invocations | ~$0 |
+  | API Gateway | $3.50/1M requests (12-month new-account free tier — don't assume it applies) | same low volume | ~$0.01–0.02 even without free tier |
+  | S3 (corpus/labels), CloudWatch, AWS Budgets | negligible / free at this scale (Budgets monitoring-only is free regardless of account age) | — | ~$0 |
+  | **Total estimate** | | | **~$2–5**, well inside the USD 20 cap |
+
+  Cohere Rerank is priced per-query (not per-token) and is the only line item worth
+  watching — repeated dev-time eval sweeps (not just the final scored run) drive it, not
+  corpus size. The mitigation is already captured below: throttle/cap dev-time rerank
+  calls rather than re-running the full 51-topic sweep on every iteration. The cap has
+  generous headroom for demo retakes regardless.
 - **Teardown is verified, not assumed:** after `terraform destroy`, assert zero remaining
   resources (`terraform state list` empty) and an empty next-day Cost Explorer. The demo
   video *includes* the teardown.
@@ -223,4 +240,8 @@ Dependency: **QNT-265 (monorepo) ships the snapshot first** — implemented agai
 
 - Monorepo planning doc: `equity-data-agent/docs/v2-overall-enhancement.md` (Track 3)
 - Regime finding + per-corpus eval discipline: monorepo QNT-261/262/274/279
-- S3 Vectors, Bedrock model availability + pricing: verify current docs at QNT-266
+- S3 Vectors, Bedrock model availability + pricing: verified 2026-08-19 against current
+  AWS docs (see §8 for the pricing breakdown). Region confirmed: `us-west-2` is one of
+  only three regions where Titan Embeddings V2, Cohere Rerank 3.5, gpt-oss-20b, and S3
+  Vectors all co-locate (the other two are `eu-central-1` and `ap-northeast-1` — no
+  latency/residency reason to prefer them for a US-based demo).
