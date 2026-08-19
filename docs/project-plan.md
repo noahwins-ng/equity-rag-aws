@@ -27,6 +27,9 @@ is what a reader who opens the repo cold uses to understand what was built and w
 
 - [ ] QNT-269: retrieval service — Lambda + API Gateway, S3 Vectors + Bedrock rerank + gpt-oss-20b
   - Per-corpus routing; no NAT Gateway / OpenSearch / Aurora (cost-trap checklist)
+  - Open question to decide at implementation: Lambda Function URL (`AWS_IAM` auth) instead
+    of API Gateway — free, simpler IaC, and keeps the endpoint private (vs. a public `NONE`-auth
+    URL, a cost-risk against the $20 cap); pair with a small reserved-concurrency cap either way
 - [ ] QNT-270: recycle retrieval eval against the cloud endpoint
   - Fills the PRD §7 in-repo-vs-cloud comparison table, per corpus
   - **Triggered by:** confirming or refuting H1/H2/H3 (PRD §7) is the project's core deliverable
