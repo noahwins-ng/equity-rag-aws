@@ -14,6 +14,9 @@ is what a reader who opens the repo cold uses to understand what was built and w
   - Terraform skeleton pinned to us-west-2; state backend
   - AWS Budgets alerts at USD 10 (warning) / USD 20 (hard cap)
   - README scaffold: Hetzner → AWS mapping table + dense-vs-hybrid tradeoff note
+  - Budget hard-stop: AWS Budgets Action auto-attaches a deny policy (scoped to
+    Bedrock/S3 Vectors/Lambda-invoke/API Gateway-invoke, never delete/terminate/`budgets:*`)
+    to the IAM user at USD 20 spend — a real technical backstop beyond the email alert
 
 ## Phase 1 — Corpus & Index
 
