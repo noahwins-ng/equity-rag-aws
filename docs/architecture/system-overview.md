@@ -3,11 +3,10 @@
 How the system actually works *now*. Kept current by `change-scope` (on scope changes) and `retro`
 (against what actually shipped). If this drifts from reality it is worse than nothing.
 
-> **Status:** Phase 0 shipped (QNT-266, 2026-08-22) — the Terraform skeleton and budget guard are
-> live in AWS account `380345540395` (us-west-2). No compute/data resources exist yet; everything
-> below the "Components / layers" table's QNT-266 row is still planned, not deployed. Update this
-> doc as each further ticket lands so it never drifts from what's actually deployed vs. still
-> planned.
+> **Status:** Phase 0 (QNT-266) and the QNT-267 S3 corpus seed are live in AWS account
+> `380345540395` (us-west-2). Everything below the "Components / layers" table's QNT-268 row is
+> still planned, not deployed. Update this doc as each further ticket lands so it never drifts
+> from what's actually deployed vs. still planned.
 
 ## Architecture
 
@@ -34,7 +33,7 @@ Full narrative + rationale for each service choice: PRD §6.
 | Layer | Responsibility | Ships in |
 |-------|----------------|----------|
 | Terraform skeleton + budget guard | AWS provider (us-west-2), local state backend, USD 10/20 Budgets alerts + auto-deny hard-stop at USD 20 | **QNT-266 — shipped** |
-| S3 corpus bucket | Frozen snapshot (corpus JSONL, labels, manifest) staged from the monorepo export | QNT-267 |
+| S3 corpus bucket | Frozen snapshot (corpus JSONL, labels, manifest) staged from the monorepo export | **QNT-267 — shipped** |
 | Index job (Lambda, one-shot) | Corpus → Bedrock Titan Text Embeddings V2 → S3 Vectors, one index per corpus | QNT-268 |
 | Retrieval service (Lambda + API GW) | Dense search (S3 Vectors) → Bedrock Cohere Rerank 3.5 → gpt-oss-20b generation | QNT-269 |
 | Eval client (local) | ir_measures scoring against the cloud endpoint, per-corpus | QNT-270 |
@@ -42,10 +41,16 @@ Full narrative + rationale for each service choice: PRD §6.
 
 ## Data stores
 
-- **S3 (corpus bucket)** — `corpus/{news,earnings}.jsonl`, `labels/retrieval.yaml`,
-  `labels/retrieval_qrels.trec`, `manifest.json`. Read-only input; identity is `point_id`
+- **S3 (corpus bucket, `equity-rag-aws-corpus-<account-id>`)** — `corpus/{news,earnings}.jsonl`,
+  `labels/retrieval.yaml`, `labels/retrieval_qrels.trec`, `manifest.json`, seeded by
+  `terraform/s3.tf` from the gitignored local `data/` staging copy (checksums verified against
+  `manifest.json` via `scripts/verify_s3_checksums.sh`). Read-only input; identity is `point_id`
   (the Qdrant point id), preserved verbatim — see PRD §5. `doc_id` groups rows back into
   documents but is *not* the eval identity.
+- **`eval/`** — the offline `ir_measures` scoring core (`retrieval_eval.py`, trimmed from
+  equity-data-agent's `agent.evals.retrieval_eval`) plus a committed copy of the labels
+  (`eval/labels/`). Not a deployed component; the QNT-270 eval client imports this module to
+  score the cloud endpoint.
 - **S3 Vectors** — two indices, one per corpus (`news`, `earnings`), dense-only, keyed by
   `point_id`, tagged with corpus/ticker/date metadata.
 - No relational/document store — everything is file-based (S3) or vector-native (S3 Vectors).

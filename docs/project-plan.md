@@ -20,7 +20,7 @@ is what a reader who opens the repo cold uses to understand what was built and w
 
 ## Phase 1 — Corpus & Index
 
-- [ ] QNT-267: frozen corpus snapshot into S3
+- [x] QNT-267: frozen corpus snapshot into S3
   - Consumes QNT-265 (monorepo, shipped PR #539) — corpus/{news,earnings}.jsonl, labels, manifest
   - `point_id` (not `doc_id`) preserved verbatim as the join/identity key (PRD §5)
 - [ ] QNT-268: index job — Bedrock Titan embeddings into S3 Vectors
