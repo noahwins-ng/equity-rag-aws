@@ -3,9 +3,11 @@
 How the system actually works *now*. Kept current by `change-scope` (on scope changes) and `retro`
 (against what actually shipped). If this drifts from reality it is worse than nothing.
 
-> **Status:** design-stage — mirrors the PRD §6 architecture as planned. No component has shipped
-> yet (QNT-266 is the first ticket). Update this doc as each ticket lands so it never drifts from
-> what's actually deployed vs. still planned.
+> **Status:** Phase 0 shipped (QNT-266, 2026-08-22) — the Terraform skeleton and budget guard are
+> live in AWS account `000000000000` (us-west-2). No compute/data resources exist yet; everything
+> below the "Components / layers" table's QNT-266 row is still planned, not deployed. Update this
+> doc as each further ticket lands so it never drifts from what's actually deployed vs. still
+> planned.
 
 ## Architecture
 
@@ -31,7 +33,7 @@ Full narrative + rationale for each service choice: PRD §6.
 
 | Layer | Responsibility | Ships in |
 |-------|----------------|----------|
-| Terraform skeleton + budget guard | AWS provider (us-west-2), state backend, USD 10/20 Budgets alerts | QNT-266 |
+| Terraform skeleton + budget guard | AWS provider (us-west-2), local state backend, USD 10/20 Budgets alerts + auto-deny hard-stop at USD 20 | **QNT-266 — shipped** |
 | S3 corpus bucket | Frozen snapshot (corpus JSONL, labels, manifest) staged from the monorepo export | QNT-267 |
 | Index job (Lambda, one-shot) | Corpus → Bedrock Titan Text Embeddings V2 → S3 Vectors, one index per corpus | QNT-268 |
 | Retrieval service (Lambda + API GW) | Dense search (S3 Vectors) → Bedrock Cohere Rerank 3.5 → gpt-oss-20b generation | QNT-269 |
@@ -64,8 +66,14 @@ Full narrative + rationale for each service choice: PRD §6.
   Vectors).
 - **Compute:** Lambda only — no NAT Gateway, no provisioned concurrency, no always-on
   compute (architecture rule: zero idle-billed resources).
-- **Budget:** USD 20 hard cap, AWS Budgets alert at USD 10 (warning) / USD 20 (hard cap),
-  backstopped by `terraform destroy`.
+- **Budget:** USD 20 hard cap. Two layers, both live: an AWS Budgets alert at USD 10 (warning) /
+  USD 20 (notification), and a Budgets Action that auto-attaches an IAM deny policy to the
+  operator's IAM user at USD 20 — scoped to only this project's billed actions (Bedrock invoke,
+  S3 Vectors put/query, Lambda invoke, API Gateway invoke), never delete/terminate/`budgets:*`, so
+  `terraform destroy` still works after it fires. Both backstop `terraform destroy` as the actual
+  teardown mechanism.
+- **State backend:** local (not S3-remote) — solo, single-apply/destroy-cycle project; avoids a
+  remote-state bootstrap bucket that itself needs tearing down.
 - **Lifecycle:** ephemeral — the stack exists for the demo window (`apply` → query → eval →
   `destroy`), not persistently deployed. No CD, no uptime monitoring, no rollback story
   (PRD §4).

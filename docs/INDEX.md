@@ -13,3 +13,4 @@
 
 ## Retrospectives
 <!-- One per completed milestone; retro appends here. -->
+- [Phase 0 — Foundation](retros/phase-0-foundation.md) — QNT-266 shipped; invariant/guard audit, Bedrock model-access gap surfaced for Phase 1
