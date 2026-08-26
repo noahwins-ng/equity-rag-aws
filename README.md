@@ -17,7 +17,7 @@ zero-idle-cost equivalent — same retrieval flow, different substrate:
 | In-repo embedding model | `openai/text-embedding-3-small` via OpenRouter | A deliberately *different* embedding space (re-embedding is the point of the experiment). Originally planned via AWS Bedrock; moved to OpenRouter after an unresolved AWS account-level Bedrock quota defect — see [ADR-0001](docs/decisions/0001-bedrock-to-openrouter.md) |
 | Cohere Rerank API | Cohere Rerank 3.5 via OpenRouter | Same model, different serving path — isolates the substrate variable |
 | Groq (generation serving) | gpt-oss-20b via OpenRouter | Same open-weight model family, pay-per-request instead of a dedicated inference host |
-| Hetzner VPS (app process) | Lambda + API Gateway | Zero idle cost, IaC-trivial, scales to zero between eval runs |
+| Hetzner VPS (app process) | Lambda + Function URL (`AWS_IAM` auth) | Zero idle cost, IaC-trivial, scales to zero between eval runs, private by IAM auth (no API Gateway needed) |
 | VPS filesystem / local Qdrant storage | S3 (frozen corpus snapshot) | Durable, versioned, read-only input — no live ingestion |
 
 ## Dense-vs-hybrid tradeoff
@@ -42,6 +42,7 @@ cd terraform
 terraform init
 terraform apply -var-file=example.tfvars   # or your own .tfvars with a real alert email
 # ... demo window: query, eval ...
+uv run python scripts/invoke_retrieval.py news "Did Apple strike a chip deal with Intel?"
 terraform destroy -var-file=example.tfvars
 ```
 

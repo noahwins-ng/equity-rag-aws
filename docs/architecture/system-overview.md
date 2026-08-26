@@ -3,10 +3,12 @@
 How the system actually works *now*. Kept current by `change-scope` (on scope changes) and `retro`
 (against what actually shipped). If this drifts from reality it is worse than nothing.
 
-> **Status:** Phase 0 (QNT-266) and Phase 1 (QNT-267 S3 corpus seed, QNT-268 index job + S3
-> Vectors indices) are live in AWS account `380345540395` (us-west-2). Model serving moved from
-> Bedrock to OpenRouter mid-Phase-1 (ADR-0001) — the index job calls OpenRouter, not Bedrock.
-> Everything below the "Components / layers" table's QNT-269 row is still planned, not deployed.
+> **Status:** Phase 0 (QNT-266), Phase 1 (QNT-267 S3 corpus seed, QNT-268 index job + S3
+> Vectors indices), and QNT-269 (retrieval service) are live in AWS account `380345540395`
+> (us-west-2). Model serving moved from Bedrock to OpenRouter mid-Phase-1 (ADR-0001) — the
+> index job and retrieval service both call OpenRouter, not Bedrock. QNT-269 also decided
+> Lambda Function URL (`AWS_IAM` auth) over API Gateway — see the retrieval service row below.
+> Everything below the "Components / layers" table's QNT-270 row is still planned, not deployed.
 > Update this doc as each further ticket lands so it never drifts from what's actually deployed
 > vs. still planned.
 
@@ -20,8 +22,8 @@ How the system actually works *now*. Kept current by `change-scope` (on scope ch
  + labels + manifest    │   labels/            → PutVectors (point_id-keyed,    (news, earnings)   │
                         │   manifest.json      corpus/ticker/date metadata)           │            │
                         │                                                             ▼            │
- eval client (local) ─────► API Gateway ──► retrieval Lambda:  dense top-k (S3 Vectors)            │
- ir_measures + labels   │                    → OpenRouter Cohere Rerank 3.5 → [optional gpt-oss-20b]│
+ eval client (local) ─────► Function URL ──► retrieval Lambda: dense top-k (S3 Vectors)            │
+ ir_measures + labels   │   (AWS_IAM auth)  → OpenRouter Cohere Rerank 3.5 → [optional gpt-oss-20b]│
                         │                                      │                                   │
                         │   CloudWatch  ◄── logs + latency/invocation/error metrics                │
                         │   AWS Budgets ◄── USD 20 alert (AWS spend only — OpenRouter spend has a   │
@@ -40,7 +42,7 @@ Full narrative + rationale for each service choice: PRD §6.
 | Terraform skeleton + budget guard | AWS provider (us-west-2), local state backend, USD 10/20 Budgets alerts + auto-deny hard-stop at USD 20 | **QNT-266 — shipped** |
 | S3 corpus bucket | Frozen snapshot (corpus JSONL, labels, manifest) staged from the monorepo export | **QNT-267 — shipped** |
 | Index job (Lambda, one-shot) | Corpus → OpenRouter embedding model → S3 Vectors, one index per corpus | **QNT-268 — shipped** |
-| Retrieval service (Lambda + API GW) | Dense search (S3 Vectors) → OpenRouter Cohere Rerank 3.5 → gpt-oss-20b generation | QNT-269 |
+| Retrieval service (Lambda + Function URL, `AWS_IAM` auth) | Dense search (S3 Vectors) → OpenRouter Cohere Rerank 3.5 → gpt-oss-20b generation | **QNT-269 — shipped** |
 | Eval client (local) | ir_measures scoring against the cloud endpoint, per-corpus | QNT-270 |
 | CloudWatch | Logs + latency/invocation/error metrics for the retrieval Lambda | QNT-271 |
 
@@ -58,18 +60,25 @@ Full narrative + rationale for each service choice: PRD §6.
   score the cloud endpoint.
 - **S3 Vectors** — two indices, one per corpus (`news`, `earnings`), dense-only, keyed by
   `point_id`, tagged with corpus/ticker/date metadata. Populated by the QNT-268 index job
-  (512-dim cosine, `openai/text-embedding-3-small` via OpenRouter).
+  (512-dim cosine, `openai/text-embedding-3-small` via OpenRouter). Queried (not written) by
+  the QNT-269 retrieval service, which joins hits back to source text from the S3 corpus
+  bucket (S3 Vectors metadata doesn't carry the full text).
 - No relational/document store — everything is file-based (S3) or vector-native (S3 Vectors).
 
 ## External surfaces
 
-- **API Gateway → retrieval Lambda** — the only runtime endpoint. Request resolves the
-  target corpus (per the topic's scope in `labels/retrieval.yaml`), returns reranked dense
-  results + a generated answer.
+- **Lambda Function URL (`AWS_IAM` auth) → retrieval Lambda** — the only runtime endpoint.
+  Request resolves the target corpus (per the topic's scope in `labels/retrieval.yaml`), does
+  dense search (S3 Vectors) → OpenRouter Cohere Rerank 3.5 → optional gpt-oss-20b generation,
+  returns reranked dense results + a generated answer. IAM auth (not API Gateway) keeps it
+  private — only callers with `lambda:InvokeFunctionUrl` (the operator's own AWS credentials)
+  can invoke it (no reserved-concurrency cap — this account's total Lambda concurrency quota
+  is only 10, too low to reserve any of it). Sample-query smoke test:
+  `scripts/invoke_retrieval.py`.
 - **Index job** — one-shot, not a persistent surface; triggered manually/by IaC apply, not
   on a schedule (no live ingestion — see PRD §4 non-goals).
-- **Eval client** — runs locally against the deployed API Gateway endpoint; not a deployed
-  component itself.
+- **Eval client** — runs locally against the deployed Function URL endpoint (SigV4-signed);
+  not a deployed component itself.
 
 ## Infrastructure
 
@@ -80,7 +89,7 @@ Full narrative + rationale for each service choice: PRD §6.
 - **Budget:** USD 20 hard cap — **AWS spend only**. Two layers, both live: an AWS Budgets
   alert at USD 10 (warning) / USD 20 (notification), and a Budgets Action that auto-attaches
   an IAM deny policy to the operator's IAM user at USD 20 — scoped to only this project's
-  billed AWS actions (S3 Vectors put/query, Lambda invoke, API Gateway invoke), never
+  billed AWS actions (S3 Vectors put/query, Lambda invoke, Function URL invoke), never
   delete/terminate/`budgets:*`, so `terraform destroy` still works after it fires. This does
   **not** cover OpenRouter spend, which needs its own dashboard-configured spend limit — see
   PRD §8 and ADR-0001.
