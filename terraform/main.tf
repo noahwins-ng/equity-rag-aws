@@ -45,8 +45,6 @@ resource "aws_iam_policy" "budget_breach_deny" {
         Sid    = "DenyProjectSpendActions"
         Effect = "Deny"
         Action = [
-          "bedrock:InvokeModel",
-          "bedrock:InvokeModelWithResponseStream",
           "s3vectors:PutVectors",
           "s3vectors:QueryVectors",
           "lambda:InvokeFunction",

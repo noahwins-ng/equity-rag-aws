@@ -3,8 +3,14 @@ terraform {
 
   required_providers {
     aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
+      source = "hashicorp/aws"
+      # >= 6.25 for S3 Vectors resources (aws_s3vectors_vector_bucket, aws_s3vectors_index),
+      # first available at 6.25.0 -- bumped from ~> 5.0 for QNT-268.
+      version = "~> 6.25"
+    }
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.4"
     }
   }
 

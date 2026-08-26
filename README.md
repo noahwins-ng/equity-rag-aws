@@ -14,9 +14,9 @@ zero-idle-cost equivalent — same retrieval flow, different substrate:
 | In-repo (Hetzner) | AWS | Why |
 |---|---|---|
 | Qdrant (self-hosted, always-on) | S3 Vectors | Zero idle floor, pay-per-use, trivially destroyed — no always-on vector search process |
-| In-repo embedding model | Bedrock Titan Text Embeddings V2 | Bedrock-native; a deliberately *different* embedding space (re-embedding is the point of the experiment) |
-| Cohere Rerank API | Bedrock Cohere Rerank 3.5 | Same model, different serving path — isolates the substrate variable |
-| Groq (generation serving) | Bedrock gpt-oss-20b | Same open-weight model family, pay-per-request instead of a dedicated inference host |
+| In-repo embedding model | `openai/text-embedding-3-small` via OpenRouter | A deliberately *different* embedding space (re-embedding is the point of the experiment). Originally planned via AWS Bedrock; moved to OpenRouter after an unresolved AWS account-level Bedrock quota defect — see [ADR-0001](docs/decisions/0001-bedrock-to-openrouter.md) |
+| Cohere Rerank API | Cohere Rerank 3.5 via OpenRouter | Same model, different serving path — isolates the substrate variable |
+| Groq (generation serving) | gpt-oss-20b via OpenRouter | Same open-weight model family, pay-per-request instead of a dedicated inference host |
 | Hetzner VPS (app process) | Lambda + API Gateway | Zero idle cost, IaC-trivial, scales to zero between eval runs |
 | VPS filesystem / local Qdrant storage | S3 (frozen corpus snapshot) | Durable, versioned, read-only input — no live ingestion |
 
