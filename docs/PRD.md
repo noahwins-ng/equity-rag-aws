@@ -132,8 +132,8 @@ carried by the manifest checksums, not by where the files sit.
  + labels + manifest    │   labels/            → PutVectors (point_id-keyed,    (news, earnings)   │
                         │   manifest.json      corpus/ticker/date metadata)           │            │
                         │                                                             ▼            │
- eval client (local) ─────► API Gateway ──► retrieval Lambda:  dense top-k (S3 Vectors)            │
- ir_measures + labels   │                    → OpenRouter Cohere Rerank 3.5 → [optional gpt-oss-20b]│
+ eval client (local) ─────► Function URL ──► retrieval Lambda: dense top-k (S3 Vectors)            │
+ ir_measures + labels   │   (AWS_IAM auth)  → OpenRouter Cohere Rerank 3.5 → [optional gpt-oss-20b]│
                         │                                      │                                   │
                         │   CloudWatch  ◄── logs + latency/invocation/error metrics                │
                         │   AWS Budgets ◄── USD 20 alert (AWS spend only — see §8 for the           │
@@ -151,7 +151,7 @@ carried by the manifest checksums, not by where the files sit.
 | **`openai/text-embedding-3-small` via OpenRouter** | Single OpenAI-API-compatible endpoint; cheap, fast, truncatable to 512-dim via the `dimensions` param; a *deliberately different* embedding space from the in-repo model | AWS Bedrock — abandoned 2026-08-26 after a confirmed, unresolved AWS account-level quota provisioning defect (see ADR-0001); reusing in-repo vectors was already rejected (would defeat the substrate-change experiment) |
 | **Cohere Rerank 3.5 via OpenRouter** | The *same model* as the in-repo rerank path — isolates the substrate variable. Same model as originally planned, just a different host (was: via Bedrock) | A different reranker (would confound the comparison) |
 | **gpt-oss-20b via OpenRouter** | Same open-weight family as the parent project's generation path | A pricier proprietary model (generation isn't what's being measured) |
-| **Lambda + API Gateway** | Zero idle cost, IaC-trivial | ECS/Fargate service (idle-billed) |
+| **Lambda + Function URL (`AWS_IAM` auth)** | Zero idle cost, IaC-trivial, no public endpoint — only callers with `lambda:InvokeFunctionUrl` (the operator's own AWS credentials) can invoke it | API Gateway (extra resource/cost for no capability gain — the only caller already carries AWS credentials; a `NONE`-auth Function URL would be publicly spammable, a cost risk outside the AWS Budgets cap); ECS/Fargate (idle-billed) |
 | **us-west-2** | S3 Vectors availability. (Previously also justified by Bedrock model co-location — moot now that model serving is via OpenRouter, an AWS-region-independent SaaS API) | — |
 
 ## 7. Eval plan
@@ -195,7 +195,7 @@ refutation is a genuinely interesting substrate effect and gets written up as su
   | S3 Vectors writes (PUT) | $0.20 / GB | <0.1 GB | ~$0.02 |
   | S3 Vectors queries | $2.50/1M queries + $0.004/TB processed (first 100K vectors) + $0.01/GB returned (first 512KB/query free) | few hundred queries, tiny index | ~$0.05 |
   | Lambda | 1M requests + 400K GB-seconds/month free (perpetual) | hundreds–low thousands of invocations | ~$0 |
-  | API Gateway | $3.50/1M requests (12-month new-account free tier — don't assume it applies) | same low volume | ~$0.01–0.02 even without free tier |
+  | Lambda Function URL | No separate charge (billed as Lambda invocations/duration above) | — | ~$0, folded into the Lambda row |
   | S3 (corpus/labels), CloudWatch, AWS Budgets | negligible / free at this scale | — | ~$0 |
   | **AWS total estimate** | | | **~$0.10**, well inside the USD 20 cap |
 
