@@ -1,0 +1,7 @@
+# Vendored into the deployment package (QNT-268) -- pinned to match uv.lock so the
+# Lambda's boto3 build is the same one the s3vectors client was verified against
+# locally. Lambda's built-in boto3 predates S3 Vectors (GA Dec 2025), so this can't
+# rely on the runtime's bundled SDK.
+boto3==1.43.78
+# OpenRouter client (OpenAI-API-compatible) -- embeddings, see ADR-0001.
+openai==3.3.1
