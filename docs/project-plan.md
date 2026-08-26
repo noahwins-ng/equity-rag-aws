@@ -38,9 +38,14 @@ is what a reader who opens the repo cold uses to understand what was built and w
     free, simpler IaC, keeps the endpoint private (only callers with `lambda:InvokeFunctionUrl`,
     i.e. the operator's own AWS credentials). No reserved-concurrency cap — this account's
     total Lambda concurrency quota is only 10, too low to reserve any of it
-- [ ] QNT-270: recycle retrieval eval against the cloud endpoint
+- [x] QNT-270: recycle retrieval eval against the cloud endpoint
   - Fills the PRD §7 in-repo-vs-cloud comparison table, per corpus
   - **Triggered by:** confirming or refuting H1/H2/H3 (PRD §7) is the project's core deliverable
+  - Results: H1 confirmed (news), H2 refuted (earnings rerank lift is large in-repo, not
+    marginal), H3 confirmed for news / partially refuted for earnings (MRR delta sign
+    flips) — full writeup in `eval/results/qnt-270-cloud-eval.md`
+  - In-repo baseline recomputed per-corpus from `equity-data-agent`'s frozen run files;
+    PRD's original blended pre-relabel number superseded (see results doc)
 
 ## Phase 3 — Observability & Demo Wrap-up
 
