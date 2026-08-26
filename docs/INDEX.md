@@ -16,3 +16,4 @@
 <!-- One per completed milestone; retro appends here. -->
 - [Phase 0 — Foundation](retros/phase-0-foundation.md) — QNT-266 shipped; invariant/guard audit, Bedrock model-access gap surfaced for Phase 1
 - [Phase 1 — Corpus & Index](retros/phase-1-corpus-and-index.md) — QNT-267/QNT-268 shipped; Bedrock→OpenRouter pivot (ADR-0001), vendor-entitlement lesson, no gaps found for Phase 2
+- [Phase 2 — Retrieval & Eval](retros/phase-2-retrieval-and-eval.md) — QNT-269/QNT-270 shipped in ~54min; H1 confirmed, H2 refuted, H3 mixed; stale-baseline + write-up lessons, no gaps found for Phase 3
