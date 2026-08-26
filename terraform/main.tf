@@ -48,7 +48,9 @@ resource "aws_iam_policy" "budget_breach_deny" {
           "s3vectors:PutVectors",
           "s3vectors:QueryVectors",
           "lambda:InvokeFunction",
-          "execute-api:Invoke",
+          "lambda:InvokeFunctionUrl", # retrieval service Function URL (QNT-269)
+          "execute-api:Invoke",       # unused now QNT-269 chose a Function URL over API
+          # Gateway -- kept harmlessly, same as the dropped Bedrock actions before it
         ]
         Resource = "*"
       }

@@ -1,0 +1,8 @@
+# Vendored into the deployment package -- pinned to match uv.lock (same pins as
+# lambda/index_job, QNT-268) so this Lambda's boto3 build is the one the s3vectors client
+# was verified against locally. Lambda's built-in boto3 predates S3 Vectors (GA Dec 2025).
+boto3==1.43.78
+# OpenRouter client (OpenAI-API-compatible) -- embeddings + generation, see ADR-0001.
+# Rerank has no client method (not part of the OpenAI API surface) -- called directly via
+# urllib in handler.py.
+openai==3.3.1
