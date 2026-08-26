@@ -157,25 +157,42 @@ carried by the manifest checksums, not by where the files sit.
 ## 7. Eval plan
 
 Same metrics, same labels, scored per-corpus — the deliverable of the whole project is
-this table (filled in by QNT-270):
+this table (filled in by QNT-270; full writeup + reproduction command in
+`eval/results/qnt-270-cloud-eval.md`):
 
 | Corpus | Config | R@5 | R@20 | MRR | nDCG@10 |
 |---|---|---|---|---|---|
-| news | in-repo dense (Qdrant) | 0.48 | 0.72 | 0.85 | 0.70 |
-| news | in-repo hybrid+rerank (Qdrant) | 0.53 | 0.76 | 0.94 | 0.79 |
-| news | **cloud dense (S3 Vectors)** | ? | ? | ? | ? |
-| news | **cloud dense+rerank (S3 Vectors + OpenRouter)** | ? | ? | ? | ? |
-| earnings | in-repo (per-corpus numbers from monorepo) | … | … | … | … |
-| earnings | **cloud dense / dense+rerank** | ? | ? | ? | ? |
+| news | in-repo dense (Qdrant) | 0.295 | 0.612 | 0.620 | 0.521 |
+| news | in-repo hybrid+rerank (Qdrant) | 0.527 | 0.799 | 0.857 | 0.786 |
+| news | **cloud dense (S3 Vectors)** | 0.310 | 0.654 | 0.641 | 0.544 |
+| news | **cloud dense+rerank (S3 Vectors + OpenRouter)** | 0.411 | 0.654 | 0.806 | 0.679 |
+| earnings | in-repo dense (Qdrant) | 0.335 | 0.529 | 0.671 | 0.531 |
+| earnings | in-repo hybrid+rerank (Qdrant) | 0.529 | 0.674 | 1.000 | 0.834 |
+| earnings | **cloud dense (S3 Vectors)** | 0.321 | 0.534 | 0.789 | 0.629 |
+| earnings | **cloud dense+rerank (S3 Vectors + OpenRouter)** | 0.364 | 0.534 | 0.761 | 0.639 |
+
+(The in-repo rows are freshly computed per-corpus from `equity-data-agent`'s current
+frozen run files, superseding this table's original "in-repo dense (Qdrant): 0.48 / 0.72
+/ 0.85 / 0.70" placeholder, which was a pre-relabel number blended across both corpora,
+not a news-only figure — see the results doc for the reconciliation.)
 
 **Hypotheses (stated before running — H1/H2 are the experiment):**
 
 - **H1 (news):** cloud dense+rerank lands *between* in-repo dense-only and in-repo
   hybrid+rerank — rerank recovers most of the missing BM25 leg's lift.
+  **CONFIRMED** — holds on all four metrics.
 - **H2 (earnings):** rerank lift stays marginal on the cloud too — the dense-saturated
   regime is a corpus property, not a stack property.
+  **REFUTED** — in-repo earnings rerank lift is actually the largest of either
+  corpus/config (MRR reaches a perfect 1.000); the cloud's small/mixed rerank lift
+  (MRR even *drops*) is a substrate effect, not a corpus property.
 - **H3 (embeddings):** the OpenRouter embedding model's dense-only results differ from
   in-repo dense-only (different space), but the *rerank delta* is directionally consistent.
+  **CONFIRMED for news** (rerank delta positive on R@5/MRR/nDCG@10 in both stacks; R@20
+  is structurally invariant to rerank in this eval's `top_k=top_n=20` design, so it's
+  excluded from the directional comparison, not counted as a 4th matching metric);
+  **PARTIALLY REFUTED for earnings** (cloud's MRR delta is negative while in-repo's is
+  positive — the one metric where the two stacks disagree on direction).
 
 Any outcome is publishable: confirmation proves the regime finding generalizes;
 refutation is a genuinely interesting substrate effect and gets written up as such.
