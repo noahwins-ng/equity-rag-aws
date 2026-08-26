@@ -4,11 +4,11 @@ How the system actually works *now*. Kept current by `change-scope` (on scope ch
 (against what actually shipped). If this drifts from reality it is worse than nothing.
 
 > **Status:** Phase 0 (QNT-266), Phase 1 (QNT-267 S3 corpus seed, QNT-268 index job + S3
-> Vectors indices), and QNT-269 (retrieval service) are live in AWS account `000000000000`
-> (us-west-2). Model serving moved from Bedrock to OpenRouter mid-Phase-1 (ADR-0001) — the
-> index job and retrieval service both call OpenRouter, not Bedrock. QNT-269 also decided
-> Lambda Function URL (`AWS_IAM` auth) over API Gateway — see the retrieval service row below.
-> Everything below the "Components / layers" table's QNT-270 row is still planned, not deployed.
+> Vectors indices), QNT-269 (retrieval service), and QNT-270 (cloud eval) are live/done in
+> AWS account `000000000000` (us-west-2). Model serving moved from Bedrock to OpenRouter
+> mid-Phase-1 (ADR-0001) — the index job and retrieval service both call OpenRouter, not
+> Bedrock. QNT-269 also decided Lambda Function URL (`AWS_IAM` auth) over API Gateway — see
+> the retrieval service row below. QNT-271 (CloudWatch) is still planned, not deployed.
 > Update this doc as each further ticket lands so it never drifts from what's actually deployed
 > vs. still planned.
 
@@ -43,7 +43,7 @@ Full narrative + rationale for each service choice: PRD §6.
 | S3 corpus bucket | Frozen snapshot (corpus JSONL, labels, manifest) staged from the monorepo export | **QNT-267 — shipped** |
 | Index job (Lambda, one-shot) | Corpus → OpenRouter embedding model → S3 Vectors, one index per corpus | **QNT-268 — shipped** |
 | Retrieval service (Lambda + Function URL, `AWS_IAM` auth) | Dense search (S3 Vectors) → OpenRouter Cohere Rerank 3.5 → gpt-oss-20b generation | **QNT-269 — shipped** |
-| Eval client (local) | ir_measures scoring against the cloud endpoint, per-corpus | QNT-270 |
+| Eval client (local) | ir_measures scoring against the cloud endpoint, per-corpus | **QNT-270 — shipped** |
 | CloudWatch | Logs + latency/invocation/error metrics for the retrieval Lambda | QNT-271 |
 
 ## Data stores
@@ -56,8 +56,10 @@ Full narrative + rationale for each service choice: PRD §6.
   documents but is *not* the eval identity.
 - **`eval/`** — the offline `ir_measures` scoring core (`retrieval_eval.py`, trimmed from
   equity-data-agent's `agent.evals.retrieval_eval`) plus a committed copy of the labels
-  (`eval/labels/`). Not a deployed component; the QNT-270 eval client imports this module to
-  score the cloud endpoint.
+  (`eval/labels/`). Not a deployed component; `cloud_eval.py` (QNT-270) SigV4-signs one
+  request per labeled topic against the deployed Function URL, reconstructs dense-only and
+  dense+rerank rankings from the response, and scores both per-corpus. Results + hypothesis
+  assessment (H1/H2/H3) live in `eval/results/qnt-270-cloud-eval.md`.
 - **S3 Vectors** — two indices, one per corpus (`news`, `earnings`), dense-only, keyed by
   `point_id`, tagged with corpus/ticker/date metadata. Populated by the QNT-268 index job
   (512-dim cosine, `openai/text-embedding-3-small` via OpenRouter). Queried (not written) by
@@ -77,8 +79,9 @@ Full narrative + rationale for each service choice: PRD §6.
   `scripts/invoke_retrieval.py`.
 - **Index job** — one-shot, not a persistent surface; triggered manually/by IaC apply, not
   on a schedule (no live ingestion — see PRD §4 non-goals).
-- **Eval client** — runs locally against the deployed Function URL endpoint (SigV4-signed);
-  not a deployed component itself.
+- **Eval client** (`eval/cloud_eval.py`) — runs locally against the deployed Function URL
+  endpoint (SigV4-signed), one call per labeled topic, `generate=false`; not a deployed
+  component itself.
 
 ## Infrastructure
 
