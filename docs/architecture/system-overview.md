@@ -3,12 +3,10 @@
 How the system actually works *now*. Kept current by `change-scope` (on scope changes) and `retro`
 (against what actually shipped). If this drifts from reality it is worse than nothing.
 
-> **Status:** Phase 0 (QNT-266) and Phase 1 (QNT-267 S3 corpus seed, QNT-268 index job + S3
-> Vectors indices) are live in AWS account `380345540395` (us-west-2). Model serving moved from
-> Bedrock to OpenRouter mid-Phase-1 (ADR-0001) — the index job calls OpenRouter, not Bedrock.
-> Everything below the "Components / layers" table's QNT-269 row is still planned, not deployed.
-> Update this doc as each further ticket lands so it never drifts from what's actually deployed
-> vs. still planned.
+> **Status:** Phase 0 (QNT-266) and the QNT-267 S3 corpus seed are live in AWS account
+> `380345540395` (us-west-2). Everything below the "Components / layers" table's QNT-268 row is
+> still planned, not deployed. Update this doc as each further ticket lands so it never drifts
+> from what's actually deployed vs. still planned.
 
 ## Architecture
 
@@ -39,7 +37,7 @@ Full narrative + rationale for each service choice: PRD §6.
 |-------|----------------|----------|
 | Terraform skeleton + budget guard | AWS provider (us-west-2), local state backend, USD 10/20 Budgets alerts + auto-deny hard-stop at USD 20 | **QNT-266 — shipped** |
 | S3 corpus bucket | Frozen snapshot (corpus JSONL, labels, manifest) staged from the monorepo export | **QNT-267 — shipped** |
-| Index job (Lambda, one-shot) | Corpus → OpenRouter embedding model → S3 Vectors, one index per corpus | **QNT-268 — shipped** |
+| Index job (Lambda, one-shot) | Corpus → OpenRouter embedding model → S3 Vectors, one index per corpus | QNT-268 |
 | Retrieval service (Lambda + API GW) | Dense search (S3 Vectors) → OpenRouter Cohere Rerank 3.5 → gpt-oss-20b generation | QNT-269 |
 | Eval client (local) | ir_measures scoring against the cloud endpoint, per-corpus | QNT-270 |
 | CloudWatch | Logs + latency/invocation/error metrics for the retrieval Lambda | QNT-271 |
@@ -57,8 +55,7 @@ Full narrative + rationale for each service choice: PRD §6.
   (`eval/labels/`). Not a deployed component; the QNT-270 eval client imports this module to
   score the cloud endpoint.
 - **S3 Vectors** — two indices, one per corpus (`news`, `earnings`), dense-only, keyed by
-  `point_id`, tagged with corpus/ticker/date metadata. Populated by the QNT-268 index job
-  (512-dim cosine, `openai/text-embedding-3-small` via OpenRouter).
+  `point_id`, tagged with corpus/ticker/date metadata.
 - No relational/document store — everything is file-based (S3) or vector-native (S3 Vectors).
 
 ## External surfaces
@@ -84,10 +81,6 @@ Full narrative + rationale for each service choice: PRD §6.
   delete/terminate/`budgets:*`, so `terraform destroy` still works after it fires. This does
   **not** cover OpenRouter spend, which needs its own dashboard-configured spend limit — see
   PRD §8 and ADR-0001.
-- **Secrets:** the OpenRouter API key (Lambda env var, sourced from a gitignored `.tfvars`
-  value) — the project's first secret; previously the architecture was pure IAM auth with zero
-  secrets. Not AWS Secrets Manager (per-secret monthly charge would violate the zero-idle-billed
-  rule) — see ADR-0001.
 - **State backend:** local (not S3-remote) — solo, single-apply/destroy-cycle project; avoids a
   remote-state bootstrap bucket that itself needs tearing down.
 - **Lifecycle:** ephemeral — the stack exists for the demo window (`apply` → query → eval →
