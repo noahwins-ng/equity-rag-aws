@@ -8,7 +8,7 @@ How the system actually works *now*. Kept current by `change-scope` (on scope ch
 > AWS account `380345540395` (us-west-2). Model serving moved from Bedrock to OpenRouter
 > mid-Phase-1 (ADR-0001) — the index job and retrieval service both call OpenRouter, not
 > Bedrock. QNT-269 also decided Lambda Function URL (`AWS_IAM` auth) over API Gateway — see
-> the retrieval service row below. QNT-271 (CloudWatch) is still planned, not deployed.
+> the retrieval service row below. QNT-271 (CloudWatch) is also live/done.
 > Update this doc as each further ticket lands so it never drifts from what's actually deployed
 > vs. still planned.
 
@@ -44,7 +44,7 @@ Full narrative + rationale for each service choice: PRD §6.
 | Index job (Lambda, one-shot) | Corpus → OpenRouter embedding model → S3 Vectors, one index per corpus | **QNT-268 — shipped** |
 | Retrieval service (Lambda + Function URL, `AWS_IAM` auth) | Dense search (S3 Vectors) → OpenRouter Cohere Rerank 3.5 → gpt-oss-20b generation | **QNT-269 — shipped** |
 | Eval client (local) | ir_measures scoring against the cloud endpoint, per-corpus | **QNT-270 — shipped** |
-| CloudWatch | Logs + latency/invocation/error metrics for the retrieval Lambda | QNT-271 |
+| CloudWatch | Logs (Terraform-managed log group) + latency/invocation/error metrics for the retrieval Lambda | **QNT-271 — shipped** |
 
 ## Data stores
 
