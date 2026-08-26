@@ -27,6 +27,15 @@ data "archive_file" "retrieval_service" {
   depends_on = [null_resource.retrieval_service_build]
 }
 
+# Explicit (not Lambda's implicit auto-created group) so it's tracked in state and removed
+# by `terraform destroy` -- QNT-271. Basic invocation/error/duration metrics need no
+# resource of their own: Lambda publishes them to the AWS/Lambda namespace automatically
+# for every function, so the aws_lambda_function resource above already "defines" them.
+resource "aws_cloudwatch_log_group" "retrieval_service" {
+  name              = "/aws/lambda/equity-rag-aws-retrieval-service"
+  retention_in_days = 14
+}
+
 resource "aws_iam_role" "retrieval_service" {
   name = "equity-rag-aws-retrieval-service-role"
 
