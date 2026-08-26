@@ -15,20 +15,24 @@ is what a reader who opens the repo cold uses to understand what was built and w
   - AWS Budgets alerts at USD 10 (warning) / USD 20 (hard cap)
   - README scaffold: Hetzner → AWS mapping table + dense-vs-hybrid tradeoff note
   - Budget hard-stop: AWS Budgets Action auto-attaches a deny policy (scoped to
-    Bedrock/S3 Vectors/Lambda-invoke/API Gateway-invoke, never delete/terminate/`budgets:*`)
+    S3 Vectors/Lambda-invoke/API Gateway-invoke, never delete/terminate/`budgets:*`)
     to the IAM user at USD 20 spend — a real technical backstop beyond the email alert
+    (Bedrock actions dropped from the deny list 2026-08-26, QNT-268 -- ADR-0001; this
+    guard only covers AWS-billed actions and never covered OpenRouter spend anyway)
 
 ## Phase 1 — Corpus & Index
 
 - [x] QNT-267: frozen corpus snapshot into S3
   - Consumes QNT-265 (monorepo, shipped PR #539) — corpus/{news,earnings}.jsonl, labels, manifest
   - `point_id` (not `doc_id`) preserved verbatim as the join/identity key (PRD §5)
-- [ ] QNT-268: index job — Bedrock Titan embeddings into S3 Vectors
+- [x] QNT-268: index job — OpenRouter embeddings into S3 Vectors
   - One S3 Vectors index per corpus (news, earnings); vectors keyed by `point_id`
+  - **Triggered by:** scope change 2026-08-26 (was: Bedrock Titan embeddings) — see ADR-0001
 
 ## Phase 2 — Retrieval & Eval
 
-- [ ] QNT-269: retrieval service — Lambda + API Gateway, S3 Vectors + Bedrock rerank + gpt-oss-20b
+- [ ] QNT-269: retrieval service — Lambda + API Gateway, S3 Vectors + OpenRouter rerank + generation
+  - **Triggered by:** scope change 2026-08-26 (was: Bedrock rerank + gpt-oss-20b) — see ADR-0001
   - Per-corpus routing; no NAT Gateway / OpenSearch / Aurora (cost-trap checklist)
   - Open question to decide at implementation: Lambda Function URL (`AWS_IAM` auth) instead
     of API Gateway — free, simpler IaC, and keeps the endpoint private (vs. a public `NONE`-auth

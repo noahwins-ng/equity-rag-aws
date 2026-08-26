@@ -73,7 +73,12 @@ architecture_rules: |
     docs/PRD.md §5). doc_id is a document-grouping id, not the eval identity — don't confuse
     the two.
   - Retrieval eval results are reported PER-CORPUS (news vs earnings), never blended.
-  - Region is pinned to us-west-2 (co-locates all Bedrock models + S3 Vectors).
+  - Region is pinned to us-west-2 (S3 Vectors availability). Model serving moved from
+    AWS Bedrock to OpenRouter 2026-08-26 (ADR-0001, confirmed unresolved AWS account-level
+    Bedrock quota provisioning defect) -- OpenRouter is region-independent, so this pin is
+    now driven by S3 Vectors alone, not model co-location.
+  - The AWS Budgets USD 20 hard-stop covers AWS spend only. OpenRouter spend needs its
+    own dashboard-configured spend limit -- not covered by the AWS-side guard.
 
 ac_execution_keywords:
   - returns

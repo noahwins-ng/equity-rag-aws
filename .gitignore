@@ -20,6 +20,10 @@ __pycache__/
 # Snapshot data (large; fetched from the monorepo export, not versioned here)
 data/
 
+# Lambda deployment packages -- vendored deps + zip, rebuilt by terraform (QNT-268)
+lambda/*/build/
+terraform/*.zip
+
 # OS / editor
 .DS_Store
 .idea/
