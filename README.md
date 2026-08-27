@@ -35,6 +35,38 @@ leg costs, per corpus. The expectation, stated as a hypothesis before running it
 
 Full hypotheses (H1–H3) and the comparison table: [`docs/PRD.md` §7](docs/PRD.md#7-eval-plan).
 
+## Retrieval eval results
+
+Cloud numbers from `eval/cloud_eval.py` against the deployed retrieval Lambda; in-repo numbers
+recomputed per-corpus from `equity-data-agent`'s frozen run files. Full methodology and
+reproduction steps: [`eval/results/qnt-270-cloud-eval.md`](eval/results/qnt-270-cloud-eval.md).
+
+| Corpus | Config | R@5 | R@20 | MRR | nDCG@10 |
+|---|---|---|---|---|---|
+| news | in-repo dense (Qdrant) | 0.295 | 0.612 | 0.620 | 0.521 |
+| news | in-repo hybrid+rerank (Qdrant) | 0.527 | 0.799 | 0.857 | 0.786 |
+| news | cloud dense (S3 Vectors) | 0.310 | 0.654 | 0.641 | 0.544 |
+| news | cloud dense+rerank (S3 Vectors + OpenRouter) | 0.411 | 0.654 | 0.806 | 0.679 |
+| earnings | in-repo dense (Qdrant) | 0.335 | 0.529 | 0.671 | 0.531 |
+| earnings | in-repo hybrid+rerank (Qdrant) | 0.529 | 0.674 | 1.000 | 0.834 |
+| earnings | cloud dense (S3 Vectors) | 0.321 | 0.534 | 0.789 | 0.629 |
+| earnings | cloud dense+rerank (S3 Vectors + OpenRouter) | 0.364 | 0.534 | 0.761 | 0.639 |
+
+**Verdicts:**
+
+- **H1 (news) — CONFIRMED.** Cloud dense+rerank lands strictly between in-repo dense-only and
+  in-repo hybrid+rerank on all four metrics — rerank recovers most, not all, of the missing BM25
+  leg's lift.
+- **H2 (earnings) — REFUTED.** The premise ("rerank lift stays marginal on earnings, in-repo or
+  cloud") fails: in-repo earnings rerank lift is the largest of either corpus/config (MRR reaches
+  a perfect 1.000). Cloud's rerank lift on earnings is small and mixed (MRR actually **drops**
+  -0.028) — a substrate effect (Cohere Rerank 3.5 reranking pure-dense candidates vs. the in-repo's
+  hybrid-informed candidate set), not a dense-saturated corpus property.
+- **H3 (embeddings) — CONFIRMED for news, PARTIALLY REFUTED for earnings.** Dense-only numbers
+  differ from in-repo on both corpora (different embedding space), as expected. Rerank-delta
+  direction matches in-repo on news; on earnings it disagrees on MRR (in-repo positive, cloud
+  negative) — the one metric where the two stacks diverge in direction, not just magnitude.
+
 ## Stand up / tear down
 
 ```sh
@@ -49,3 +81,21 @@ terraform destroy -var-file=example.tfvars
 No console-created resources — everything above is defined in `terraform/` and `terraform destroy`
 returns the account to zero. Budget: USD 20 hard cap, AWS Budgets alert at USD 10 (warning) and
 USD 20 (hard cap), backstopping the destroy step. See [`docs/PRD.md` §8](docs/PRD.md#8-budget-and-teardown).
+
+## Cost model
+
+AWS spend is dominated by fixed per-request pricing at near-zero scale; OpenRouter (model serving)
+is the real cost driver and is **not** covered by the AWS Budgets guard — it needs its own
+dashboard-configured spend limit. Full breakdown: [`docs/PRD.md` §8](docs/PRD.md#8-budget-and-teardown).
+
+| Line item | Est. cost |
+|---|---|
+| S3 Vectors (storage + writes + queries) | ~$0.08 |
+| Lambda + Function URL | ~$0 (within the perpetual free tier at this scale) |
+| S3, CloudWatch, AWS Budgets | ~$0 |
+| **AWS total** | **~$0.10**, well inside the USD 20 hard cap |
+| OpenRouter (embeddings + rerank + generation) | separate spend, guarded by an OpenRouter-side dashboard limit, not the AWS cap |
+
+## Demo video
+
+_TODO: link the stand-up → query → eval → teardown recording here (QNT-272 AC1)._

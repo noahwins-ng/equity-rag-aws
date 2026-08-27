@@ -5,7 +5,7 @@ How the system actually works *now*. Kept current by `change-scope` (on scope ch
 
 > **Status:** Phase 0 (QNT-266), Phase 1 (QNT-267 S3 corpus seed, QNT-268 index job + S3
 > Vectors indices), QNT-269 (retrieval service), and QNT-270 (cloud eval) are live/done in
-> AWS account `000000000000` (us-west-2). Model serving moved from Bedrock to OpenRouter
+> an AWS account (us-west-2, account id redacted for public repo). Model serving moved from Bedrock to OpenRouter
 > mid-Phase-1 (ADR-0001) — the index job and retrieval service both call OpenRouter, not
 > Bedrock. QNT-269 also decided Lambda Function URL (`AWS_IAM` auth) over API Gateway — see
 > the retrieval service row below. QNT-271 (CloudWatch) is also live/done.
