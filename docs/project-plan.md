@@ -50,6 +50,6 @@ is what a reader who opens the repo cold uses to understand what was built and w
 ## Phase 3 — Observability & Demo Wrap-up
 
 - [x] QNT-271: CloudWatch logs + metrics for the retrieval service
-- [ ] QNT-272: demo recording + verified teardown + README
+- [x] QNT-272: demo recording + verified teardown + README
   - Stand-up → query → eval → teardown video; verified empty Cost Explorer
   - Repo flipped PUBLIC after a pre-publish secrets/account-id sweep
