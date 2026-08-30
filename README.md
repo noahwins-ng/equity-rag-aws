@@ -72,10 +72,21 @@ reproduction steps: [`eval/results/qnt-270-cloud-eval.md`](eval/results/qnt-270-
 ```sh
 cd terraform
 terraform init
-terraform apply -var-file=example.tfvars   # or your own .tfvars with a real alert email
+terraform apply   # uses terraform.tfvars (gitignored) or pass -var-file=example.tfvars as a template
+
+# The index job is a one-shot Lambda, not run automatically by apply -- invoke it once per
+# corpus before querying, or the S3 Vectors indices are empty and queries return no results.
+aws lambda invoke --cli-read-timeout 920 --function-name equity-rag-aws-index-job \
+  --payload '{"corpus":"news"}' --cli-binary-format raw-in-base64-out out-news.json
+aws lambda invoke --cli-read-timeout 920 --function-name equity-rag-aws-index-job \
+  --payload '{"corpus":"earnings"}' --cli-binary-format raw-in-base64-out out-earnings.json
+
 # ... demo window: query, eval ...
+cd ..
 uv run python scripts/invoke_retrieval.py news "Did Apple strike a chip deal with Intel?"
-terraform destroy -var-file=example.tfvars
+
+cd terraform
+terraform destroy
 ```
 
 No console-created resources — everything above is defined in `terraform/` and `terraform destroy`
@@ -98,4 +109,6 @@ dashboard-configured spend limit. Full breakdown: [`docs/PRD.md` §8](docs/PRD.m
 
 ## Demo video
 
-_TODO: link the stand-up → query → eval → teardown recording here (QNT-272 AC1)._
+[Stand-up → index → query → eval → teardown recording](https://github.com/noahwins-ng/equity-rag-aws/releases/download/demo-v1/equity-rag-aws-demo.mov)
+(`terraform apply`, index job invocations for both corpora, sample queries against news and
+earnings, the eval results above, then `terraform destroy`).
