@@ -130,9 +130,10 @@ Cross-referencing this retro's findings against Phase 3 found **no gaps requirin
 - QNT-272 (demo + verified teardown + README)'s AC4 (pre-publish sweep: "no tfvars/state, no AWS
   account ids in text or screenshots, no secrets in history") already anticipates exactly the two
   new facts this project picked up across Phases 1–2: the OpenRouter API key (ADR-0001's new
-  secret) and the AWS account id `000000000000`, which currently appears in plain text in
+  secret) and the AWS account id, which currently appeared in plain text in
   `docs/architecture/system-overview.md`. No AC change needed — flagging it here only so the sweep
-  isn't a surprise when QNT-272 starts.
+  isn't a surprise when QNT-272 starts. (QNT-272: redacted in all three places it appeared —
+  this file, `phase-0-foundation.md`, and `system-overview.md`.)
 - QNT-272's AC3 (README finalized with H1–H3 verdicts) can pull directly from
   `eval/results/qnt-270-cloud-eval.md` — already written, including the mixed (not clean-sweep)
   H2/H3 outcomes flagged above.

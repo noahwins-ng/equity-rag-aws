@@ -22,8 +22,8 @@
   (they were unverified placeholders at ship time — real numbers now: ~$2–5 estimated spend,
   `us-west-2` confirmed as 1 of only 3 regions where Titan V2 + Cohere Rerank 3.5 + gpt-oss-20b +
   S3 Vectors all co-locate).
-- Real infra now live in AWS account `000000000000` (us-west-2) — the first non-planning resources
-  this project has created. No compute/data resources yet.
+- Real infra now live in AWS (us-west-2, account id redacted for public repo) — the first
+  non-planning resources this project has created. No compute/data resources yet.
 
 ## Velocity
 
