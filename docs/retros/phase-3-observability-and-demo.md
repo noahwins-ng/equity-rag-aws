@@ -3,10 +3,17 @@
 **Milestone:** Phase 3 — Observability & Demo Wrap-up (the project's final phase)
 **Tickets:** QNT-271 (CloudWatch logs + metrics for the retrieval service), QNT-272 (demo
 recording + verified teardown + README)
-**Timeline:** 2026-08-26 17:03 (QNT-271 merged) → 2026-08-31 13:54 UTC (last QNT-272 commit),
-~5 calendar days, mostly idle between the two tickets. *(Linear status timestamps weren't
-queryable this session — no `LINEAR_API_KEY` in the environment — so timing is reconstructed
-from PR/commit history, not tracked ticket time.)*
+**Timeline:** 2026-08-26 16:55 (QNT-271 In Progress) → 2026-08-30 17:44 (QNT-272 Done), ~4.3
+calendar days, mostly idle between the two tickets. Tracked ticket time: QNT-271 ~9 minutes
+(16:55 In Progress → 17:03:57 Done, single-commit PR, one brief In Review→In Progress bounce for
+the merge); QNT-272 ~3 days 4h16m (08-27 13:28:27 In Progress → 08-30 17:44:30 Done) — the ticket
+where every previously-deferred loose end surfaced at once. QNT-272 then briefly flipped
+Done → In Progress → Done again on 2026-08-31 at 14:04:17–14:04:21 (4 seconds) — triggered by PR
+#17 (this retro's own PR), whose branch name (`noahwinsdev/qnt-272-retro-phase-3`) the
+GitHub↔Linear integration parsed as a QNT-272 reference despite neither the commit message nor PR
+title mentioning it. Self-resolved back to Done; a live recurrence of
+[[feedback-linear-pr-autoclose]] caught only because this retro checked Linear directly after
+reconnecting mid-session — see Surprises.
 **PRs:** [#15](https://github.com/noahwins-ng/equity-rag-aws/pull/15) (QNT-271, merged
 2026-08-26, 1 commit), [#16](https://github.com/noahwins-ng/equity-rag-aws/pull/16) (QNT-272,
 merged 2026-08-30, 2 commits) — plus **two commits pushed directly to `main` after PR #16**,
@@ -71,6 +78,15 @@ link) surfaces at once, because nothing gates publish-readiness until the publis
 - **Video hosting needed two pivots.** GitHub's inline video-attachment upload failed twice with
   a generic, unresolved error; the release-asset fallback played by forcing a download instead of
   inline playback. YouTube (unlisted, click-to-play thumbnail) was the working third option.
+- **The Linear PR auto-close drift recurred, live, during this retro.** This session's Linear MCP
+  connection dropped partway through the retro; once reconnected, QNT-272's state history showed
+  it had flipped `Done → In Progress → Done` again (2026-08-31 14:04:17–14:04:21) the moment this
+  retro's own PR (#17) merged — the GitHub↔Linear integration parsed the branch name
+  `noahwinsdev/qnt-272-retro-phase-3` as a QNT-272 reference, despite neither the commit message
+  nor the PR title mentioning it. Self-resolved in 4 seconds, no correction needed, but it's the
+  exact drift [[feedback-linear-pr-autoclose]] already warns about — caught only because this
+  retro happened to check Linear directly after reconnecting, not because anything is watching
+  for it.
 
 ## Blockers
 
@@ -119,13 +135,28 @@ quota defect — belongs to Phase 1 and was resolved there by moving to OpenRout
    projects — branch protection is cheap to turn on and the retro's own audit only exists because
    nothing else would have caught this.
 
+4. **Invariant:** an issue's tracked status reflects real work state — reopening means work
+   resumed.
+   **Violation:** QNT-272 flipped `Done → In Progress → Done` a second time (08-31, 4 seconds
+   apart) with zero actual work done, because PR #17's branch name happened to contain "qnt-272".
+   **Guard:** NONE — this is a known, already-memorized gap ([[feedback-linear-pr-autoclose]] from
+   a prior ship) that recurred unchanged; nothing was built after the first occurrence to prevent
+   it.
+   **Disposition: accepted risk, unchanged from the existing memory's disposition** — the
+   integration's auto-linking is a Linear/GitHub product behavior, not something this project can
+   fix; the existing guidance ("verify status after every merge") already covers it and worked
+   here (self-resolved, caught on inspection). No new ticket — this project is complete and has no
+   further merges coming.
+
 **Same-shape clustering:** findings 2 and 3 are the same shape — *a rule that exists only as
 written guidance (an AC, a CLAUDE.md sentence) has no enforcement once nobody is deliberately
 checking it, and both gaps surfaced at the exact same moment: right after the project was
 declared "done."* One deeper lesson covers both: **treat project close-out as the highest-risk
 window for process shortcuts, not the lowest** — it's when the fewest checks are left engaged and
 the strongest urge exists to just push the fix. Captured as a single generalized memory rather
-than two narrow ones.
+than two narrow ones. Finding 4 is a different shape (a tooling quirk, not a discipline gap) but
+worth noting alongside them since it's the same *retro* surfacing it — three distinct gap types,
+all only visible because this milestone happened to be the one where nobody was watching closely.
 
 ## Lessons captured to memory
 
@@ -140,6 +171,9 @@ than two narrow ones.
   directly after the project's closing ticket merged, with no branch protection to stop it —
   process discipline is weakest exactly when a project is being wrapped up; turn on branch
   protection (or accept the risk explicitly) rather than relying on the written convention alone.
+- [[feedback-linear-pr-autoclose]] — updated: 4th recurrence, sharpened — branch name alone
+  (`noahwinsdev/qnt-272-retro-phase-3`) triggered the auto-close drift with no ticket-ID mention
+  anywhere in the PR title or commit messages; a clean title/commit history doesn't prevent it.
 
 ## Phase review (next milestone)
 
@@ -156,9 +190,11 @@ down (verified) — the document describes the architecture as built and reprodu
 
 ## Plan sync
 
-Mechanical gap sweep: no gap. `docs/project-plan.md` already has QNT-271 and QNT-272 checked
-under Phase 3, matching Linear/PR state exactly (confirmed via `gh pr list`; direct Linear query
-wasn't available this session — no API key). Nothing to sync.
+Mechanical gap sweep (tracker set vs. `grep -oE 'QNT-[0-9]+' docs/project-plan.md`): tracker set
+{QNT-266..272} (Linear `list_issues` for the project, all `Done`) vs. plan set {QNT-265..272}. Gap
+= tracker − plan = **empty**. (QNT-265 is in the plan set but not the tracker set by design — it's
+the monorepo dependency, tracked in a different repo — already documented as such in the plan.)
+Nothing to sync.
 
 ## Next up
 
