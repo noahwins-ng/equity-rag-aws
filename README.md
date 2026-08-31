@@ -6,6 +6,30 @@ pay-per-request primitives, scores it with the identical offline retrieval eval,
 per-corpus before/after comparison. Ephemeral: `terraform apply` for a demo window, then
 `terraform destroy`. Full spec: [`docs/PRD.md`](docs/PRD.md).
 
+## Architecture
+
+```
+                        ┌────────────────────────── Terraform (us-west-2) ─────────────────────────┐
+                        │                                                                          │
+ monorepo (QNT-265)     │   S3 bucket          index job (Lambda, one-shot)      S3 Vectors        │
+ frozen snapshot ─────────► corpus/*.jsonl ──► OpenRouter embedding model ────► index per corpus   │
+ + labels + manifest    │   labels/            → PutVectors (point_id-keyed,    (news, earnings)   │
+                        │   manifest.json      corpus/ticker/date metadata)           │            │
+                        │                                                             ▼            │
+ eval client (local) ─────► Function URL ──► retrieval Lambda: dense top-k (S3 Vectors)            │
+ ir_measures + labels   │   (AWS_IAM auth)  → OpenRouter Cohere Rerank 3.5 → [optional gpt-oss-20b]│
+                        │                                      │                                   │
+                        │   CloudWatch  ◄── logs + latency/invocation/error metrics                │
+                        │   AWS Budgets ◄── USD 20 alert (AWS spend only — OpenRouter spend has a   │
+                        │                    separate guard, its own dashboard spend limit)         │
+                        └──────────────────────────────────────────────────────────────────────────┘
+   (OpenRouter is external HTTPS, not Terraform-managed AWS infra — reached via Lambda's default
+    internet egress; no VPC/NAT needed.)
+```
+
+Everything above is Terraform-defined and destroyed together. Full component/data-store breakdown:
+[`docs/architecture/system-overview.md`](docs/architecture/system-overview.md).
+
 ## Hetzner → AWS mapping
 
 The in-repo stack runs on a Hetzner VPS. This project swaps each component for an AWS-native,
