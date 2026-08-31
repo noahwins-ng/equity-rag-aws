@@ -133,6 +133,7 @@ dashboard-configured spend limit. Full breakdown: [`docs/PRD.md` §8](docs/PRD.m
 
 ## Demo video
 
-[Stand-up → index → query → eval → teardown recording](https://github.com/noahwins-ng/equity-rag-aws/releases/download/demo-v1/equity-rag-aws-demo.mov)
-(`terraform apply`, index job invocations for both corpora, sample queries against news and
-earnings, the eval results above, then `terraform destroy`).
+[![Demo: stand-up → index → query → eval → teardown](https://i.ytimg.com/vi/fdJ5s8kmU-w/hqdefault.jpg)](https://youtu.be/fdJ5s8kmU-w)
+
+`terraform apply` → index job invocations for both corpora → sample queries against news and
+earnings → the eval results above → `terraform destroy`.
