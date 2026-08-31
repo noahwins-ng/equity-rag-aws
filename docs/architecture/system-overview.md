@@ -3,14 +3,15 @@
 How the system actually works *now*. Kept current by `change-scope` (on scope changes) and `retro`
 (against what actually shipped). If this drifts from reality it is worse than nothing.
 
-> **Status:** Phase 0 (QNT-266), Phase 1 (QNT-267 S3 corpus seed, QNT-268 index job + S3
-> Vectors indices), QNT-269 (retrieval service), and QNT-270 (cloud eval) are live/done in
-> an AWS account (us-west-2, account id redacted for public repo). Model serving moved from Bedrock to OpenRouter
-> mid-Phase-1 (ADR-0001) — the index job and retrieval service both call OpenRouter, not
-> Bedrock. QNT-269 also decided Lambda Function URL (`AWS_IAM` auth) over API Gateway — see
-> the retrieval service row below. QNT-271 (CloudWatch) is also live/done.
-> Update this doc as each further ticket lands so it never drifts from what's actually deployed
-> vs. still planned.
+> **Status:** All 8 tickets in the delivery plan (QNT-265 through QNT-272) are shipped — this
+> project is complete. Model serving moved from Bedrock to OpenRouter mid-Phase-1 (ADR-0001) —
+> the index job and retrieval service both call OpenRouter, not Bedrock. QNT-269 decided Lambda
+> Function URL (`AWS_IAM` auth) over API Gateway — see the retrieval service row below. QNT-271
+> added CloudWatch logs/metrics. QNT-272 recorded the demo, then ran `terraform destroy`
+> (verified: empty `terraform state list`, ~$0 next-day Cost Explorer) — **the AWS stack
+> described below is torn down, not currently running**; this document describes the
+> architecture as built, reproducible from a clean `terraform apply`, not live infrastructure.
+> The repo is now public (post-publish secrets/account-id sweep, QNT-272 AC4).
 
 ## Architecture
 
