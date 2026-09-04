@@ -95,6 +95,14 @@ resource "aws_iam_role_policy" "index_job" {
   })
 }
 
+# Explicit so it's tracked in state and removed by `terraform destroy` -- the auto-created
+# group for this function was found orphaned after the QNT-272 teardown (QNT-271 only
+# declared the retrieval-service one). Same pattern as retrieval_service.tf.
+resource "aws_cloudwatch_log_group" "index_job" {
+  name              = "/aws/lambda/equity-rag-aws-index-job"
+  retention_in_days = 14
+}
+
 resource "aws_lambda_function" "index_job" {
   function_name = "equity-rag-aws-index-job"
   role          = aws_iam_role.index_job.arn

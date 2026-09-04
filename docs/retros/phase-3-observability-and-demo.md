@@ -101,6 +101,13 @@ quota defect — belongs to Phase 1 and was resolved there by moving to OpenRout
    outside Terraform's state.
    **Guard:** caught and fixed within QNT-271 itself (`terraform import` + `terraform plan
    -destroy` re-verified full teardown, 0 orphans) before merge.
+   **Recurrence (found 2026-09-04, post-close):** the "0 orphans" claim was off by one. QNT-271
+   fixed only the retrieval-service group; the index-job Lambda's auto-created group
+   (`/aws/lambda/equity-rag-aws-index-job`, 7.7 KB, no retention) survived the QNT-272
+   `terraform destroy` because it was never declared or imported. Deleted by hand and
+   `aws_cloudwatch_log_group.index_job` added to Terraform so a future stand-up tears it down.
+   Lesson sharpened: the fix must cover *every* Lambda in the stack, not just the one the ticket
+   is about — grep for `aws_lambda_function` and check each has a matching log group.
    **Disposition: guarded, no new gap** — this project has no further Terraform work coming (it's
    complete), so there's no remaining surface for recurrence here. Generalized to memory for
    future Terraform+Lambda projects: declare the log group explicitly and import on first apply,
