@@ -1,21 +1,20 @@
 # Equity RAG on AWS
 
-Takes an *evaluated* RAG retrieval pipeline (dense search → rerank → optional generation) from the
-[equity-data-agent](https://github.com/noahwins-ng/equity-data-agent) monorepo, re-platforms it onto
-pay-per-request AWS primitives (S3 Vectors + Lambda) with OpenRouter as the model-serving layer,
-scores it with the **identical** offline retrieval eval, and reports what the substrate change
-cost, per corpus. Ephemeral by design: `terraform apply` for a demo window, then `terraform destroy`.
+An evaluated RAG retrieval pipeline (dense search → rerank → generation), re-platformed from a
+self-hosted Qdrant stack onto pay-per-request AWS primitives (S3 Vectors + Lambda, all Terraform),
+and scored with the **identical** offline eval to measure exactly what the substrate change cost.
+Stood up for a demo window, then destroyed. AWS spend under $1, teardown verified.
 
-**The finding, in two sentences.** On the news corpus, Cohere Rerank 3.5 on top of dense-only
-S3 Vectors recovers most (not all) of the lift the in-repo stack gets from its BM25 hybrid leg —
-the cloud pipeline lands strictly between in-repo dense-only and in-repo hybrid+rerank on every
-metric. On the earnings corpus the picture flips: in-repo rerank lift is the largest of any
-configuration, but the cloud stack's rerank lift is small and MRR actually drops — a substrate
-effect, not the "dense-saturated corpus" property the original hypothesis assumed.
-[Full results and hypothesis verdicts ↓](#retrieval-eval-results)
+**Result.** On news, rerank over dense-only S3 Vectors recovers most of the lift the original
+stack got from its BM25 hybrid leg. On earnings it doesn't — the cloud rerank gain is small and
+MRR drops, a substrate effect the original hypothesis didn't predict.
+[Results table and verdicts ↓](#retrieval-eval-results)
 
-Spec: [`docs/PRD.md`](docs/PRD.md) · Decisions: [`docs/decisions/`](docs/decisions/) ·
-Retros: [`docs/retros/`](docs/retros/) · Demo: [YouTube](https://youtu.be/fdJ5s8kmU-w)
+**Skills on display:** Terraform IaC with a technical cost cap · serverless RAG on Lambda + S3 Vectors ·
+IR evaluation with `ir_measures` (recall, MRR, nDCG) · a documented vendor pivot under a real blocker
+([ADR-0001](docs/decisions/0001-bedrock-to-openrouter.md)) · per-phase retros ([`docs/retros/`](docs/retros/)).
+
+[Spec](docs/PRD.md) · [Demo video](https://youtu.be/fdJ5s8kmU-w) · [Full eval write-up](eval/results/qnt-270-cloud-eval.md)
 
 ## Architecture
 
@@ -54,22 +53,13 @@ zero-idle-cost equivalent — same retrieval flow, different substrate:
 | Hetzner VPS (app process) | Lambda + Function URL (`AWS_IAM` auth) | Zero idle cost, IaC-trivial, scales to zero between eval runs, private by IAM auth (no API Gateway needed) |
 | VPS filesystem / local Qdrant storage | S3 (frozen corpus snapshot) | Durable, versioned, read-only input — no live ingestion |
 
-### Dense-vs-hybrid tradeoff
-
-The in-repo stack runs **hybrid retrieval** (BM25 + dense, fused with RRF) ahead of rerank. S3
-Vectors is **dense-only** — there is no lexical leg on the cloud path. This is a documented
-tradeoff, not an oversight; the eval below quantifies exactly what the missing BM25 leg costs,
-per corpus. Hypotheses H1–H3 were stated before the eval ran: [`docs/PRD.md` §7](docs/PRD.md#7-eval-plan).
-
 ## Retrieval eval results
 
-**What was measured.** 51 labeled topics (38 news, 13 earnings) with TREC qrels keyed on the
-Qdrant `point_id`, scored with `ir_measures` — the same labels, metrics, and scoring code as the
-parent repo's CI gate. Corpus: 1,963 news article rows across 10 US tickers and 1,934 earnings
-chunk rows (EDGAR 8-K Item 2.02 / Ex 99.1, NVDA and AAPL only). Cloud numbers come from
-`eval/cloud_eval.py` against the deployed retrieval Lambda (`top_k = top_n = 20`, generation
-off); in-repo numbers are recomputed per-corpus from the monorepo's frozen run files.
-Methodology and reproduction: [`eval/results/qnt-270-cloud-eval.md`](eval/results/qnt-270-cloud-eval.md).
+51 labeled topics (38 news, 13 earnings), TREC qrels, `ir_measures` — the same labels, metrics,
+and scoring code as the parent repo's CI gate. Corpus: 1,963 news articles across 10 US tickers;
+1,934 earnings-release chunks (EDGAR 8-K, NVDA and AAPL). The in-repo stack runs hybrid BM25 +
+dense ahead of rerank; S3 Vectors is dense-only, so the cloud path has no lexical leg — the eval
+quantifies what that costs, per corpus.
 
 | Corpus | Config | R@5 | R@20 | MRR | nDCG@10 |
 |---|---|---|---|---|---|
@@ -164,11 +154,9 @@ an empty next-day Cost Explorer.
 
 ## Cost model
 
-Two vendors, two guards. AWS spend is near zero at this scale and is backstopped twice: an AWS
-Budgets alert at USD 10 / USD 20, and a Budgets Action that auto-attaches an IAM deny policy to
-the operator's user at USD 20 (scoped to this project's billable actions only, so `terraform
-destroy` still works after it fires). OpenRouter is the real cost driver and is **not** covered by
-either — it needs its own dashboard-configured spend limit.
+AWS spend is backstopped by a Budgets alert (USD 10 / 20) and a Budgets Action that attaches an
+IAM deny policy at USD 20, scoped so `terraform destroy` still works. OpenRouter is the real cost
+driver and needs its own dashboard spend limit — the AWS guard can't see it.
 
 | Line item | Observed / estimated |
 |---|---|
@@ -185,16 +173,12 @@ Pricing basis and the per-line breakdown: [`docs/PRD.md` §8](docs/PRD.md#8-budg
 
 [![Demo: stand-up → index → query → eval → teardown](https://i.ytimg.com/vi/fdJ5s8kmU-w/hqdefault.jpg)](https://youtu.be/fdJ5s8kmU-w)
 
-End to end: `terraform apply` → index job for both corpora → sample queries against
-news and earnings → the eval run that produces the table above → `terraform destroy` and the
-empty state list.
+`terraform apply` → index both corpora → sample queries → the eval run → `terraform destroy`.
 
 ## Project docs
 
-- [`docs/PRD.md`](docs/PRD.md) — spec: goals, snapshot seam contract, eval plan, budget, delivery plan.
+- [`docs/PRD.md`](docs/PRD.md) — spec: goals, seam contract, eval plan, budget.
 - [`docs/decisions/0001-bedrock-to-openrouter.md`](docs/decisions/0001-bedrock-to-openrouter.md) —
-  why model serving left Bedrock mid-project: an account-level quota defect AWS Support did not
-  resolve, the alternatives weighed, and what the pivot cost.
-- [`docs/retros/`](docs/retros/) — one retrospective per phase, each with an invariant → guard
-  audit of what went wrong and whether anything now prevents it.
+  why model serving left Bedrock mid-project, the alternatives weighed, and what the pivot cost.
+- [`docs/retros/`](docs/retros/) — one retrospective per phase, each with an invariant → guard audit.
 - [`docs/architecture/system-overview.md`](docs/architecture/system-overview.md) — the system as built.
