@@ -32,3 +32,6 @@ terraform/*.zip
 # Agent harness
 .claude/
 CLAUDE.md
+
+# Local-only resume notes
+docs/project_resume.md
