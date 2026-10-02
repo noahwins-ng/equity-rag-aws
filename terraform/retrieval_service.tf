@@ -1,5 +1,6 @@
 # Retrieval service (Lambda + Function URL) -- QNT-269. Dense search (S3 Vectors) ->
-# OpenRouter Cohere Rerank 3.5 -> optional gpt-oss-20b generation. See docs/PRD.md §6.
+# Bedrock Cohere Rerank 3.5 -> optional Bedrock gpt-oss-20b generation (ADR-0002). See
+# docs/PRD.md §6.
 #
 # Lambda Function URL (AWS_IAM auth), decided over API Gateway per the ticket's
 # implementation note: the only caller is the local eval client, which already carries AWS
@@ -55,8 +56,8 @@ resource "aws_iam_role" "retrieval_service" {
 # metadata doesn't carry it, see lambda/retrieval_service/handler.py), query (not put)
 # both S3 Vectors indices, and log. No s3vectors:GetVectors -- returnMetadata is never
 # requested, so that extra permission (required only when reading metadata back) isn't
-# needed. Rerank/generation calls go to OpenRouter (external HTTPS, not an AWS action) --
-# auth is the OPENROUTER_API_KEY env var below, same pattern as the index job.
+# needed. Bedrock InvokeModel (embed, rerank) and Converse (generation -- authorized by
+# the same bedrock:InvokeModel action) are scoped to exactly the three models used.
 resource "aws_iam_role_policy" "retrieval_service" {
   name = "retrieval-service-permissions"
   role = aws_iam_role.retrieval_service.id
@@ -69,6 +70,16 @@ resource "aws_iam_role_policy" "retrieval_service" {
         Effect   = "Allow"
         Action   = ["s3:GetObject"]
         Resource = "${aws_s3_bucket.corpus.arn}/corpus/*"
+      },
+      {
+        Sid    = "InvokeModels"
+        Effect = "Allow"
+        Action = ["bedrock:InvokeModel"]
+        Resource = [
+          "arn:aws:bedrock:${var.aws_region}::foundation-model/amazon.titan-embed-text-v2:0",
+          "arn:aws:bedrock:${var.aws_region}::foundation-model/cohere.rerank-v3-5:0",
+          "arn:aws:bedrock:${var.aws_region}::foundation-model/openai.gpt-oss-20b-1:0",
+        ]
       },
       {
         Sid      = "QueryVectors"
@@ -92,8 +103,9 @@ resource "aws_lambda_function" "retrieval_service" {
   handler       = "handler.lambda_handler"
   runtime       = "python3.13"
   architectures = ["arm64"]
-  timeout       = 30
-  memory_size   = 256
+  # 60s (was 30s): headroom for adaptive retries when Rerank 3.5's 3 req/min quota throttles.
+  timeout     = 60
+  memory_size = 256
 
   # No reserved-concurrency cap: this account's total Lambda concurrent-execution quota is
   # only 10 (aws lambda get-account-settings), and AWS enforces >=10 unreserved remaining --
@@ -107,9 +119,8 @@ resource "aws_lambda_function" "retrieval_service" {
 
   environment {
     variables = {
-      CORPUS_BUCKET      = aws_s3_bucket.corpus.id
-      VECTOR_BUCKET      = aws_s3vectors_vector_bucket.main.vector_bucket_name
-      OPENROUTER_API_KEY = var.openrouter_api_key
+      CORPUS_BUCKET = aws_s3_bucket.corpus.id
+      VECTOR_BUCKET = aws_s3vectors_vector_bucket.main.vector_bucket_name
     }
   }
 }

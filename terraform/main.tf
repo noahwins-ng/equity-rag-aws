@@ -45,12 +45,14 @@ resource "aws_iam_policy" "budget_breach_deny" {
         Sid    = "DenyProjectSpendActions"
         Effect = "Deny"
         Action = [
+          "bedrock:InvokeModel", # re-added QNT-483: model serving is back on Bedrock (ADR-0002)
+          "bedrock:InvokeModelWithResponseStream",
           "s3vectors:PutVectors",
           "s3vectors:QueryVectors",
           "lambda:InvokeFunction",
           "lambda:InvokeFunctionUrl", # retrieval service Function URL (QNT-269)
           "execute-api:Invoke",       # unused now QNT-269 chose a Function URL over API
-          # Gateway -- kept harmlessly, same as the dropped Bedrock actions before it
+          # Gateway -- kept harmlessly
         ]
         Resource = "*"
       }

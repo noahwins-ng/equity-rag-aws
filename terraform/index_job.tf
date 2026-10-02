@@ -61,11 +61,9 @@ resource "aws_iam_role" "index_job" {
   })
 }
 
-# Least-privilege for the job: read the corpus, write to the two S3 Vectors indices,
-# and log. Embedding calls go to OpenRouter (external HTTPS, not an AWS action -- no
-# IAM statement needed; auth is the OPENROUTER_API_KEY env var below). AC3's sanity
-# checks (counts, sample query) run locally under the operator's own credentials, not
-# this role.
+# Least-privilege for the job: read the corpus, embed via Bedrock Titan V2 only, write
+# to the two S3 Vectors indices, and log. AC3's sanity checks (counts, sample query) run
+# locally under the operator's own credentials, not this role.
 resource "aws_iam_role_policy" "index_job" {
   name = "index-job-permissions"
   role = aws_iam_role.index_job.id
@@ -78,6 +76,12 @@ resource "aws_iam_role_policy" "index_job" {
         Effect   = "Allow"
         Action   = ["s3:GetObject"]
         Resource = "${aws_s3_bucket.corpus.arn}/corpus/*"
+      },
+      {
+        Sid      = "EmbedTitan"
+        Effect   = "Allow"
+        Action   = ["bedrock:InvokeModel"]
+        Resource = "arn:aws:bedrock:${var.aws_region}::foundation-model/amazon.titan-embed-text-v2:0"
       },
       {
         Sid      = "WriteVectors"
@@ -117,9 +121,8 @@ resource "aws_lambda_function" "index_job" {
 
   environment {
     variables = {
-      CORPUS_BUCKET      = aws_s3_bucket.corpus.id
-      VECTOR_BUCKET      = aws_s3vectors_vector_bucket.main.vector_bucket_name
-      OPENROUTER_API_KEY = var.openrouter_api_key
+      CORPUS_BUCKET = aws_s3_bucket.corpus.id
+      VECTOR_BUCKET = aws_s3vectors_vector_bucket.main.vector_bucket_name
     }
   }
 }
@@ -131,5 +134,5 @@ output "vector_bucket" {
 
 output "index_job_function_name" {
   value       = aws_lambda_function.index_job.function_name
-  description = "Invoke manually per corpus, e.g. aws lambda invoke --function-name <this> --payload '{\"corpus\":\"news\"}' out.json"
+  description = "Invoke manually per corpus slice (Titan's 60 req/min quota caps a run at ~800 rows), e.g. aws lambda invoke --function-name <this> --payload '{\"corpus\":\"news\",\"start\":0,\"limit\":750}' out.json"
 }

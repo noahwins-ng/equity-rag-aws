@@ -17,8 +17,8 @@ is what a reader who opens the repo cold uses to understand what was built and w
   - Budget hard-stop: AWS Budgets Action auto-attaches a deny policy (scoped to
     S3 Vectors/Lambda-invoke/API Gateway-invoke, never delete/terminate/`budgets:*`)
     to the IAM user at USD 20 spend — a real technical backstop beyond the email alert
-    (Bedrock actions dropped from the deny list 2026-08-26, QNT-268 -- ADR-0001; this
-    guard only covers AWS-billed actions and never covered OpenRouter spend anyway)
+    (Bedrock actions dropped from the deny list 2026-08-26, QNT-268 -- ADR-0001; re-added
+    2026-10-02, QNT-483 -- ADR-0002, now that model serving is back on Bedrock)
 
 ## Phase 1 — Corpus & Index
 
@@ -46,6 +46,16 @@ is what a reader who opens the repo cold uses to understand what was built and w
     flips) — full writeup in `eval/results/qnt-270-cloud-eval.md`
   - In-repo baseline recomputed per-corpus from `equity-data-agent`'s frozen run files;
     PRD's original blended pre-relabel number superseded (see results doc)
+- [x] QNT-483: move model serving back to Bedrock and re-run the cloud eval
+  - **Triggered by:** the account's Bedrock quota defect was fixed (verified 2026-09-28) —
+    ADR-0002 supersedes ADR-0001; zero secrets again, AWS Budgets hard-stop covers model spend
+  - Titan V2 / Rerank 3.5 / gpt-oss-20b via Bedrock; non-adjustable quotas (60/3/100 req/min)
+    designed around: index job in ≤750-row slices, adaptive + ModelErrorException retries,
+    eval client paced at 21 s/query
+  - Results: H1 partially confirmed (Titan's weaker news recall fails R@20), H2 refuted
+    again across two embedding models, H3 confirmed for news / consistent for earnings;
+    new embedding-ablation finding (swap moves news, not earnings) —
+    `eval/results/qnt-483-bedrock-eval.md`
 
 ## Phase 3 — Observability & Demo Wrap-up
 

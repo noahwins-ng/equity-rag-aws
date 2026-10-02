@@ -10,7 +10,8 @@
 ## Decisions (ADRs)
 <!-- One line per ADR, newest last. change-scope/sync-plan/retro append here. -->
 - [ADR template](decisions/TEMPLATE.md)
-- [ADR-0001: Drop AWS Bedrock for OpenRouter as the model-serving layer](decisions/0001-bedrock-to-openrouter.md) — 2026-08-26, unresolved AWS Bedrock account-quota provisioning defect
+- [ADR-0001: Drop AWS Bedrock for OpenRouter as the model-serving layer](decisions/0001-bedrock-to-openrouter.md) — 2026-08-26, unresolved AWS Bedrock account-quota provisioning defect (superseded by ADR-0002)
+- [ADR-0002: Move model serving back from OpenRouter to AWS Bedrock](decisions/0002-bedrock-model-serving-restored.md) — 2026-10-02, quota defect resolved; design around non-adjustable 60/3/100 req/min quotas
 
 ## Retrospectives
 <!-- One per completed milestone; retro appends here. -->
