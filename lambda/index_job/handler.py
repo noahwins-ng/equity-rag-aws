@@ -1,38 +1,47 @@
-"""QNT-268 index job: embed the frozen snapshot corpus (via OpenRouter) into S3 Vectors.
+"""QNT-268 index job: embed the frozen snapshot corpus (via Bedrock Titan V2) into S3 Vectors.
 
-One invocation per corpus (event = {"corpus": "news"} or {"corpus": "earnings"}), so
-each run stays well inside the Lambda timeout -- OpenRouter's embeddings endpoint takes
-one request per call here, so ~2k rows/corpus needs concurrency, not batching, to embed
-in reasonable time. ``put_vectors`` is a keyed upsert (key = point_id), so re-running
-this job is naturally idempotent.
+One invocation per corpus slice: event = {"corpus": "news"|"earnings", "start": int,
+"limit": int} (start/limit optional, default = the whole corpus). Titan V2's on-demand
+quota on this account is 60 requests/min (non-adjustable) and takes one text per call, so
+~2k rows/corpus can't fit in one 15-min Lambda run -- invoke it in slices of <=800 rows
+(QNT-483). ``put_vectors`` is a keyed upsert (key = point_id), so re-running any slice is
+naturally idempotent.
 
-Originally embedded via AWS Bedrock (Titan V2); moved to OpenRouter 2026-08-26 after a
-confirmed, unresolved AWS account-level Bedrock quota provisioning defect -- see
-docs/decisions/0001-bedrock-to-openrouter.md.
+Served off-AWS from 2026-08-26 (ADR-0001) while this account's Bedrock quota was
+stuck at 0; moved back to Bedrock once that resolved (ADR-0002, QNT-483).
 """
 
 from __future__ import annotations
 
 import json
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import boto3
-from openai import OpenAI
+from botocore.config import Config
 
 REGION = os.environ.get("AWS_REGION", "us-west-2")
 CORPUS_BUCKET = os.environ["CORPUS_BUCKET"]
 VECTOR_BUCKET = os.environ["VECTOR_BUCKET"]
-OPENROUTER_API_KEY = os.environ["OPENROUTER_API_KEY"]
 
-EMBED_MODEL_ID = "openai/text-embedding-3-small"
+EMBED_MODEL_ID = "amazon.titan-embed-text-v2:0"
 EMBED_DIM = 512
 PUT_BATCH_SIZE = 100
-MAX_WORKERS = 8
+# One worker: at 60 req/min the quota, not latency, is the bottleneck -- more workers only
+# buy more throttling.
+MAX_WORKERS = 1
+MODEL_ERROR_RETRIES = 4
 
 s3 = boto3.client("s3", region_name=REGION)
 s3vectors = boto3.client("s3vectors", region_name=REGION)
-openrouter = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=OPENROUTER_API_KEY)
+# Adaptive retry mode rate-limits client-side after a ThrottlingException instead of
+# failing the slice.
+bedrock = boto3.client(
+    "bedrock-runtime",
+    region_name=REGION,
+    config=Config(retries={"mode": "adaptive", "max_attempts": 10}),
+)
 
 
 def _load_corpus_rows(corpus: str) -> list[dict]:
@@ -42,8 +51,21 @@ def _load_corpus_rows(corpus: str) -> list[dict]:
 
 
 def _embed(text: str) -> list[float]:
-    resp = openrouter.embeddings.create(model=EMBED_MODEL_ID, input=text, dimensions=EMBED_DIM)
-    return resp.data[0].embedding
+    # Titan intermittently returns ModelErrorException ("unexpected error ... Try your request
+    # again") -- not in botocore's retryable set, so one transient blip would otherwise fail a
+    # whole ~12-min slice. Retry it here; throttling is still handled by the adaptive config.
+    for attempt in range(MODEL_ERROR_RETRIES):
+        try:
+            resp = bedrock.invoke_model(
+                modelId=EMBED_MODEL_ID,
+                body=json.dumps({"inputText": text, "dimensions": EMBED_DIM, "normalize": True}),
+            )
+            return json.loads(resp["body"].read())["embedding"]
+        except bedrock.exceptions.ModelErrorException:
+            if attempt == MODEL_ERROR_RETRIES - 1:
+                raise
+            time.sleep(2**attempt)
+    raise AssertionError("unreachable")
 
 
 def _row_metadata(row: dict) -> dict:
@@ -90,8 +112,17 @@ def lambda_handler(event: dict, _context) -> dict:
     if corpus not in ("news", "earnings"):
         raise ValueError(f"unknown corpus: {corpus!r}")
 
-    rows = _load_corpus_rows(corpus)
+    all_rows = _load_corpus_rows(corpus)
+    start = int(event.get("start", 0))
+    limit = int(event.get("limit", len(all_rows)))
+    rows = all_rows[start : start + limit]
     vectors = _embed_rows(rows)
     _put_vectors(corpus, vectors)
 
-    return {"corpus": corpus, "rows": len(rows), "vectors_written": len(vectors)}
+    return {
+        "corpus": corpus,
+        "start": start,
+        "rows": len(rows),
+        "corpus_rows": len(all_rows),
+        "vectors_written": len(vectors),
+    }

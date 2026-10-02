@@ -1,6 +1,6 @@
 # ADR-0001: Drop AWS Bedrock for OpenRouter as the model-serving layer
 
-- **Status:** accepted
+- **Status:** superseded by ADR-0002 (2026-10-02, QNT-483 — Bedrock quota defect resolved)
 - **Date:** 2026-08-26
 - **Ticket:** QNT-268 (also affects QNT-269)
 

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Builds the index-job Lambda deployment package: vendors requirements.txt alongside
 # handler.py into build/, which terraform/index_job.tf then zips. Targets
-# aarch64-manylinux2014/py3.13 explicitly (matches the Lambda's arm64 runtime) since
-# openai's pydantic-core dependency ships a compiled native extension -- a wheel built
-# on the local machine's platform (e.g. macOS ARM64) won't load on Lambda's Linux ARM64.
+# aarch64-manylinux2014/py3.13 explicitly (matches the Lambda's arm64 runtime) so any
+# dependency with a compiled extension resolves to a Linux ARM64 wheel, not the local
+# machine's platform (e.g. macOS ARM64).
 # Re-run by terraform on any handler.py/requirements.txt change via the null_resource
 # trigger.
 set -euo pipefail

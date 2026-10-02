@@ -42,7 +42,7 @@ def main() -> int:
     SigV4Auth(boto3.Session().get_credentials(), "lambda", REGION).add_auth(request)
 
     req = urllib.request.Request(url, data=body, headers=dict(request.headers), method="POST")
-    with urllib.request.urlopen(req, timeout=30) as resp:
+    with urllib.request.urlopen(req, timeout=70) as resp:
         print(json.dumps(json.load(resp), indent=2))
     return 0
 

@@ -14,6 +14,10 @@ Scored per-corpus (news, earnings -- never blended, per workflow-profile.yaml
 architecture rules) against the copied labels, using the same ir_measures metrics as
 ``retrieval_eval.py``.
 
+Paced at one query per ``PACE_SECONDS``: every call reranks, and Bedrock Rerank 3.5's
+on-demand quota on this account is 3 requests/min (non-adjustable, QNT-483) -- 51 topics
+take ~18 min.
+
 Usage: uv run python eval/cloud_eval.py
 """
 
@@ -22,6 +26,8 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -35,6 +41,7 @@ from retrieval_eval import compute_metrics, load_qrels_trec
 REGION = "us-west-2"
 LABELS_DIR = Path(__file__).parent / "labels"
 TOP_K = 20
+PACE_SECONDS = 21  # > 60s / 3 req/min rerank quota
 
 
 def _function_url() -> str:
@@ -54,8 +61,18 @@ def _invoke(url: str, corpus: str, query: str) -> dict:
     )
     SigV4Auth(boto3.Session().get_credentials(), "lambda", REGION).add_auth(request)
     req = urllib.request.Request(url, data=body, headers=dict(request.headers), method="POST")
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.load(resp)
+    # A transient Bedrock error/throttle surfaces as a 5xx from the Lambda -- retry after the
+    # pace interval rather than losing the whole ~18-min sweep to one blip.
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=70) as resp:
+                return json.load(resp)
+        except urllib.error.HTTPError as exc:
+            if exc.code < 500 or attempt == 2:
+                raise
+            print(f"    {exc.code}, retrying...", file=sys.stderr)
+            time.sleep(PACE_SECONDS)
+    raise AssertionError("unreachable")
 
 
 def run_eval() -> tuple[dict[str, str], dict[str, dict[str, float]], dict[str, dict[str, float]]]:
@@ -67,7 +84,9 @@ def run_eval() -> tuple[dict[str, str], dict[str, dict[str, float]], dict[str, d
     run_dense: dict[str, dict[str, float]] = {}
     run_rerank: dict[str, dict[str, float]] = {}
 
-    for topic in topics:
+    for i, topic in enumerate(topics):
+        if i:
+            time.sleep(PACE_SECONDS)
         qid, corpus, query = topic["id"], topic["corpus"], topic["query"]
         corpus_of[qid] = corpus
         print(f"  {qid} ({corpus})...", file=sys.stderr)
