@@ -1,14 +1,21 @@
 # Equity RAG on AWS
 
-An already-evaluated RAG retrieval pipeline (Qdrant, hybrid keyword + vector search, Cohere
-rerank), rebuilt on pay-per-request AWS (S3 Vectors, Lambda, Bedrock, all in Terraform) and
-scored with the **identical** retrieval eval to measure what the move cost. The stack
-exists only for a demo window. Total AWS spend was under $1, and teardown to zero is verified.
+A question-answering system over stock-market documents: news about 10 US companies and
+earnings releases from NVIDIA and Apple. Ask *"What was NVIDIA's data center revenue last
+quarter?"* and it retrieves NVIDIA's recent earnings releases and answers *"$62.3 billion"* (Q4
+FY2026).
+
+The retrieval pipeline was first built and evaluated in
+[equity-data-agent](https://github.com/noahwins-ng/equity-data-agent) on self-hosted Qdrant, with
+hybrid keyword + vector search and Cohere rerank. This repo rebuilds it on pay-per-request AWS
+(S3 Vectors, Lambda, Bedrock, all in Terraform) and scores it with the **identical** eval to
+measure what the move cost. The stack exists only for a demo window. Total AWS spend was under $1,
+and teardown to zero is verified.
 
 - **Finding:** the cloud version beats the original's vector-only baseline on ranking quality
-  (nDCG@10) on both corpora, but neither cloud run reaches the original's hybrid + rerank. S3
-  Vectors has no keyword search, and that's the gap. The embedding model turned out to matter more than the vector store on news,
-  and hardly at all on earnings.
+  (nDCG@10) for both document sets, but neither cloud run reaches the original's hybrid + rerank.
+  S3 Vectors has no keyword search, and that's the biggest gap. Among the cloud choices, the
+  embedding model mattered most on news and hardly at all on earnings.
 - **How it's engineered:** a $20 spend cap enforced by an automatic IAM deny, not just an email; a
   documented switch to another vendor when Bedrock was broken for this account, and back once it was
   fixed; and a design that works inside non-adjustable Bedrock quotas as low as 3 requests/minute.
@@ -25,16 +32,19 @@ nDCG@10 (ranking quality of the top 10, higher is better) on the same 51 labeled
 | News (1,963 articles, 38 questions) | 0.521 | **0.786** | 0.547 |
 | Earnings (1,934 release chunks, 13 questions) | 0.531 | **0.834** | 0.673 |
 
-- **Keyword search is the missing piece.** Reranking alone doesn't close the gap that dropping
-  BM25 opens, on either corpus.
-- **On news, the embedding model is the biggest lever.** The same pipeline with OpenAI's
-  `text-embedding-3-small` instead of Titan V2 scored 0.679 instead of 0.547.
+- **Keyword search is the biggest missing piece.** The cloud stack trails the original by 0.24 on
+  news and 0.16 on earnings. S3 Vectors has no keyword (BM25) search, and reranking alone doesn't
+  make up for it.
+- **Among the cloud choices, the embedding model matters most on news.** The same pipeline with
+  OpenAI's `text-embedding-3-small` instead of Titan V2 scored 0.679 instead of 0.547, closing about
+  half the gap.
 - **On earnings, the embedding model barely matters** (0.639 vs. 0.673), and cloud rerank adds
   only +0.04. Earnings retrieval behaves like a `(company, quarter)` lookup more than a ranking
   problem.
 
-The two corpora behave differently under every change tested. That regime difference was the
-reason for this experiment, and it held up on a completely different stack.
+The two document sets behave differently under every change tested: news needs good ranking,
+while earnings is mostly a lookup. Testing whether that difference survives a completely
+different stack was the point of this experiment, and it did.
 [All four metrics, both cloud runs, hypotheses and caveats ↓](#full-results)
 
 ## Architecture
