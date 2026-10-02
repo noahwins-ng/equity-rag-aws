@@ -1,13 +1,13 @@
 # Equity RAG on AWS
 
-I took a RAG retrieval pipeline I'd already built and measured (Qdrant, hybrid keyword + vector
-search, Cohere rerank), rebuilt it on pay-per-request AWS (S3 Vectors, Lambda, Bedrock, all in
-Terraform), and re-ran the **identical** retrieval eval to measure what the move cost. The stack
+An already-evaluated RAG retrieval pipeline (Qdrant, hybrid keyword + vector search, Cohere
+rerank), rebuilt on pay-per-request AWS (S3 Vectors, Lambda, Bedrock, all in Terraform) and
+scored with the **identical** retrieval eval to measure what the move cost. The stack
 exists only for a demo window. Total AWS spend was under $1, and teardown to zero is verified.
 
-- **What I found:** the cloud version beats the original's vector-only baseline on ranking
-  quality (nDCG@10) on both corpora, but neither cloud run reaches the original's hybrid + rerank. S3 Vectors has no keyword search,
-  and that's the gap. The embedding model turned out to matter more than the vector store on news,
+- **Finding:** the cloud version beats the original's vector-only baseline on ranking quality
+  (nDCG@10) on both corpora, but neither cloud run reaches the original's hybrid + rerank. S3
+  Vectors has no keyword search, and that's the gap. The embedding model turned out to matter more than the vector store on news,
   and hardly at all on earnings.
 - **How it's engineered:** a $20 spend cap enforced by an automatic IAM deny, not just an email; a
   documented switch to another vendor when Bedrock was broken for this account, and back once it was
@@ -33,7 +33,7 @@ nDCG@10 (ranking quality of the top 10, higher is better) on the same 51 labeled
   only +0.04. Earnings retrieval behaves like a `(company, quarter)` lookup more than a ranking
   problem.
 
-The two corpora behave differently under every change I made. That regime difference was the
+The two corpora behave differently under every change tested. That regime difference was the
 reason for this experiment, and it held up on a completely different stack.
 [All four metrics, both cloud runs, hypotheses and caveats ↓](#full-results)
 
@@ -45,7 +45,7 @@ reason for this experiment, and it held up on a completely different stack.
   ([`terraform/main.tf`](terraform/main.tf))
 - **A vendor outage, handled with a written decision both ways.** Bedrock's console showed every
   model as authorized, but every real call failed: a provisioning defect left this account's quota
-  at 0. I moved model serving to OpenRouter ([ADR-0001](docs/decisions/0001-bedrock-to-openrouter.md)),
+  at 0. Model serving moved to OpenRouter ([ADR-0001](docs/decisions/0001-bedrock-to-openrouter.md)),
   then moved back once AWS fixed it ([ADR-0002](docs/decisions/0002-bedrock-model-serving-restored.md)).
   The switch-back removed the project's only secret and put model spend back under the $20 cap.
 - **Designed to fit hard quotas.** Bedrock allows 60 embedding and 3 rerank requests per minute on
