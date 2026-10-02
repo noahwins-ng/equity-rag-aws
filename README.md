@@ -37,30 +37,6 @@ The two corpora behave differently under every change tested. That regime differ
 reason for this experiment, and it held up on a completely different stack.
 [All four metrics, both cloud runs, hypotheses and caveats ↓](#full-results)
 
-## Engineering decisions worth reading
-
-- **A cost cap that enforces itself.** AWS Budgets alerts at $10 and, at $20, automatically attaches
-  an IAM deny policy to the operator's IAM user. It blocks Bedrock, S3 Vectors and Lambda calls but
-  never delete actions, so `terraform destroy` still works after it fires.
-  ([`terraform/main.tf`](terraform/main.tf))
-- **A vendor outage, handled with a written decision both ways.** Bedrock's console showed every
-  model as authorized, but every real call failed: a provisioning defect left this account's quota
-  at 0. Model serving moved to OpenRouter ([ADR-0001](docs/decisions/0001-bedrock-to-openrouter.md)),
-  then moved back once AWS fixed it ([ADR-0002](docs/decisions/0002-bedrock-model-serving-restored.md)).
-  The switch-back removed the project's only secret and put model spend back under the $20 cap.
-- **Designed to fit hard quotas.** Bedrock allows 60 embedding and 3 rerank requests per minute on
-  this account, and neither can be raised. The index job runs in 750-row slices that each fit one
-  15-minute Lambda run, and re-running a slice is safe because writes are keyed upserts. The eval
-  client paces itself at one query per 21 seconds.
-- **An eval built to be trusted.** The labels, metrics and scoring code are frozen and copied from
-  the original project. Results are reported per corpus and never blended, the two cloud runs are
-  kept side by side as an embedding comparison, and the caveats are stated rather than hidden.
-- **Teardown verified, not assumed.** Everything is Terraform with no console-created resources.
-  After `terraform destroy`, the state list is empty and no project resources remain (checked by
-  service). Next-day Cost Explorer showed about $0 after the earlier teardown.
-- **Lessons kept.** Each phase has a retro with an invariant-to-guard audit ([`docs/retros/`](docs/retros/)).
-  One example: a "verify with a real call, not the console status" rule written after the Bedrock outage.
-
 ## Architecture
 
 ```
@@ -92,6 +68,30 @@ Everything inside the box is defined in Terraform and destroyed together. Compon
 | gpt-oss-20b on Groq | gpt-oss-20b via Bedrock | Same model family, pay per request |
 | VPS app process | Lambda + Function URL (IAM auth) | Scales to zero; private without API Gateway |
 | VPS disk | S3 (frozen corpus snapshot) | Read-only input; no live ingestion |
+
+## Engineering decisions worth reading
+
+- **A cost cap that enforces itself.** AWS Budgets alerts at $10 and, at $20, automatically attaches
+  an IAM deny policy to the operator's IAM user. It blocks Bedrock, S3 Vectors and Lambda calls but
+  never delete actions, so `terraform destroy` still works after it fires.
+  ([`terraform/main.tf`](terraform/main.tf))
+- **A vendor outage, handled with a written decision both ways.** Bedrock's console showed every
+  model as authorized, but every real call failed: a provisioning defect left this account's quota
+  at 0. Model serving moved to OpenRouter ([ADR-0001](docs/decisions/0001-bedrock-to-openrouter.md)),
+  then moved back once AWS fixed it ([ADR-0002](docs/decisions/0002-bedrock-model-serving-restored.md)).
+  The switch-back removed the project's only secret and put model spend back under the $20 cap.
+- **Designed to fit hard quotas.** Bedrock allows 60 embedding and 3 rerank requests per minute on
+  this account, and neither can be raised. The index job runs in 750-row slices that each fit one
+  15-minute Lambda run, and re-running a slice is safe because writes are keyed upserts. The eval
+  client paces itself at one query per 21 seconds.
+- **An eval built to be trusted.** The labels, metrics and scoring code are frozen and copied from
+  the original project. Results are reported per corpus and never blended, the two cloud runs are
+  kept side by side as an embedding comparison, and the caveats are stated rather than hidden.
+- **Teardown verified, not assumed.** Everything is Terraform with no console-created resources.
+  After `terraform destroy`, the state list is empty and no project resources remain (checked by
+  service). Next-day Cost Explorer showed about $0 after the earlier teardown.
+- **Lessons kept.** Each phase has a retro with an invariant-to-guard audit ([`docs/retros/`](docs/retros/)).
+  One example: a "verify with a real call, not the console status" rule written after the Bedrock outage.
 
 ## Full results
 
