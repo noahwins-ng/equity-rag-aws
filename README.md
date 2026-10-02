@@ -1,34 +1,75 @@
 # Equity RAG on AWS
 
-An evaluated RAG retrieval pipeline (dense search → rerank → generation), re-platformed from a
-self-hosted Qdrant stack onto pay-per-request AWS primitives (S3 Vectors + Lambda, all Terraform),
-and scored with the **identical** offline eval to measure exactly what the substrate change cost.
-Stood up for a demo window, then destroyed. AWS spend under $1, teardown verified.
+I took a RAG retrieval pipeline I'd already built and measured (Qdrant, hybrid keyword + vector
+search, Cohere rerank), rebuilt it on pay-per-request AWS (S3 Vectors, Lambda, Bedrock, all in
+Terraform), and re-ran the **identical** retrieval eval to measure what the move cost. The stack
+exists only for a demo window. Total AWS spend was under $1, and teardown to zero is verified.
 
-**Result.** On news, rerank lifts dense-only S3 Vectors on every rank-sensitive metric, but how
-much of the BM25 hybrid gap it closes depends on the embedding model. text-embedding-3-small
-closed most of it. Bedrock Titan V2 closes less, and its weaker news recall leaves R@20 below
-the original dense baseline. On earnings, the cloud rerank gain stays small under both embedding
-models, a substrate effect the original hypothesis didn't predict. The embedding swap itself
-splits by corpus: it moves every news metric and leaves earnings effectively unchanged.
-[Results table and verdicts ↓](#retrieval-eval-results)
+- **What I found:** the cloud version beats the original's vector-only baseline on ranking
+  quality (nDCG@10) on both corpora, but neither cloud run reaches the original's hybrid + rerank. S3 Vectors has no keyword search,
+  and that's the gap. The embedding model turned out to matter more than the vector store on news,
+  and hardly at all on earnings.
+- **How it's engineered:** a $20 spend cap enforced by an automatic IAM deny, not just an email; a
+  documented switch to another vendor when Bedrock was broken for this account, and back once it was
+  fixed; and a design that works inside non-adjustable Bedrock quotas as low as 3 requests/minute.
 
-**Skills on display:** Terraform IaC with a technical cost cap · serverless RAG on Lambda + S3 Vectors ·
-IR evaluation with `ir_measures` (recall, MRR, nDCG) · a documented vendor pivot under a real blocker,
-and back again once it cleared ([ADR-0001](docs/decisions/0001-bedrock-to-openrouter.md),
-[ADR-0002](docs/decisions/0002-bedrock-model-serving-restored.md)) · per-phase retros ([`docs/retros/`](docs/retros/)).
+[Demo video](https://youtu.be/fdJ5s8kmU-w) · [Full eval write-up](eval/results/qnt-483-bedrock-eval.md) ·
+[Spec](docs/PRD.md) · [Decision records](docs/decisions/)
 
-[Spec](docs/PRD.md) · [Demo video](https://youtu.be/fdJ5s8kmU-w) · [Full eval write-up](eval/results/qnt-483-bedrock-eval.md) ([earlier OpenRouter run](eval/results/qnt-270-cloud-eval.md))
+## Headline result
+
+nDCG@10 (ranking quality of the top 10, higher is better) on the same 51 labeled questions:
+
+| Corpus | Original: vector only | Original: hybrid + rerank | Cloud: vector + rerank |
+|---|---|---|---|
+| News (1,963 articles, 38 questions) | 0.521 | **0.786** | 0.547 |
+| Earnings (1,934 release chunks, 13 questions) | 0.531 | **0.834** | 0.673 |
+
+- **Keyword search is the missing piece.** Reranking alone doesn't close the gap that dropping
+  BM25 opens, on either corpus.
+- **On news, the embedding model is the biggest lever.** The same pipeline with OpenAI's
+  `text-embedding-3-small` instead of Titan V2 scored 0.679 instead of 0.547.
+- **On earnings, the embedding model barely matters** (0.639 vs. 0.673), and cloud rerank adds
+  only +0.04. Earnings retrieval behaves like a `(company, quarter)` lookup more than a ranking
+  problem.
+
+The two corpora behave differently under every change I made. That regime difference was the
+reason for this experiment, and it held up on a completely different stack.
+[All four metrics, both cloud runs, hypotheses and caveats ↓](#full-results)
+
+## Engineering decisions worth reading
+
+- **A cost cap that enforces itself.** AWS Budgets alerts at $10 and, at $20, automatically attaches
+  an IAM deny policy to the operator's IAM user. It blocks Bedrock, S3 Vectors and Lambda calls but
+  never delete actions, so `terraform destroy` still works after it fires.
+  ([`terraform/main.tf`](terraform/main.tf))
+- **A vendor outage, handled with a written decision both ways.** Bedrock's console showed every
+  model as authorized, but every real call failed: a provisioning defect left this account's quota
+  at 0. I moved model serving to OpenRouter ([ADR-0001](docs/decisions/0001-bedrock-to-openrouter.md)),
+  then moved back once AWS fixed it ([ADR-0002](docs/decisions/0002-bedrock-model-serving-restored.md)).
+  The switch-back removed the project's only secret and put model spend back under the $20 cap.
+- **Designed to fit hard quotas.** Bedrock allows 60 embedding and 3 rerank requests per minute on
+  this account, and neither can be raised. The index job runs in 750-row slices that each fit one
+  15-minute Lambda run, and re-running a slice is safe because writes are keyed upserts. The eval
+  client paces itself at one query per 21 seconds.
+- **An eval built to be trusted.** The labels, metrics and scoring code are frozen and copied from
+  the original project. Results are reported per corpus and never blended, the two cloud runs are
+  kept side by side as an embedding comparison, and the caveats are stated rather than hidden.
+- **Teardown verified, not assumed.** Everything is Terraform with no console-created resources.
+  After `terraform destroy`, the state list is empty and no project resources remain (checked by
+  service). Next-day Cost Explorer showed about $0 after the earlier teardown.
+- **Lessons kept.** Each phase has a retro with an invariant-to-guard audit ([`docs/retros/`](docs/retros/)).
+  One example: a "verify with a real call, not the console status" rule written after the Bedrock outage.
 
 ## Architecture
 
 ```
                         ┌────────────────────────── Terraform (us-west-2) ─────────────────────────┐
                         │                                                                          │
- monorepo (QNT-265)     │   S3 bucket          index job (Lambda, one-shot)      S3 Vectors        │
+ source project         │   S3 bucket          index job (Lambda, sliced)        S3 Vectors        │
  frozen snapshot ─────────► corpus/*.jsonl ──► Bedrock Titan Embeddings V2 ───► index per corpus   │
- + labels + manifest    │   labels/            → PutVectors (point_id-keyed,    (news, earnings)   │
-                        │   manifest.json      corpus/ticker/date metadata)           │            │
+ + labels + manifest    │   labels/            → PutVectors (keyed by chunk id, (news, earnings)   │
+                        │   manifest.json      ticker/date metadata)                  │            │
                         │                                                             ▼            │
  eval client (local) ─────► Function URL ──► retrieval Lambda: dense top-k (S3 Vectors)            │
  ir_measures + labels   │   (AWS_IAM auth)  → Bedrock Cohere Rerank 3.5 → [optional gpt-oss-20b]   │
@@ -38,79 +79,78 @@ and back again once it cleared ([ADR-0001](docs/decisions/0001-bedrock-to-openro
                         └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-Everything inside the box is Terraform-defined and destroyed together. Component and data-store
-breakdown: [`docs/architecture/system-overview.md`](docs/architecture/system-overview.md).
+Everything inside the box is defined in Terraform and destroyed together. Component breakdown:
+[`docs/architecture/system-overview.md`](docs/architecture/system-overview.md).
 
-### Hetzner → AWS mapping
+**What changed from the original stack**, which runs on a Hetzner VPS:
 
-The in-repo stack runs on a Hetzner VPS. This project swaps each component for an AWS-native,
-zero-idle-cost equivalent — same retrieval flow, different substrate:
-
-| In-repo (Hetzner) | AWS | Why |
+| Original | AWS | Why |
 |---|---|---|
-| Qdrant (self-hosted, always-on) | S3 Vectors | Zero idle floor, pay-per-use, trivially destroyed — no always-on vector search process |
-| In-repo embedding model (see the monorepo) | Bedrock Titan Text Embeddings V2, 512-dim | A deliberately *different* embedding space (re-embedding is the point of the experiment). Served via OpenRouter (`text-embedding-3-small`) while this account's Bedrock quota was broken ([ADR-0001](docs/decisions/0001-bedrock-to-openrouter.md)), back on Bedrock once it was fixed ([ADR-0002](docs/decisions/0002-bedrock-model-serving-restored.md)) |
-| Cohere Rerank 3.5 (Cohere API direct) | Cohere Rerank 3.5 via Bedrock | Same model, different serving path — isolates the substrate variable |
-| Groq (generation serving) | gpt-oss-20b via Bedrock | Same open-weight model family, pay-per-request instead of a dedicated inference host |
-| Hetzner VPS (app process) | Lambda + Function URL (`AWS_IAM` auth) | Zero idle cost, IaC-trivial, scales to zero between eval runs, private by IAM auth (no API Gateway needed) |
-| VPS filesystem / local Qdrant storage | S3 (frozen corpus snapshot) | Durable, versioned, read-only input — no live ingestion |
+| Qdrant (always-on) | S3 Vectors | No idle cost; pay per use. Vector-only: no keyword (BM25) search |
+| Original embedding model | Bedrock Titan Text Embeddings V2 (512-dim) | Deliberately a different embedding space |
+| Cohere Rerank 3.5 (Cohere API) | Cohere Rerank 3.5 via Bedrock | Same model, so rerank isn't a variable |
+| gpt-oss-20b on Groq | gpt-oss-20b via Bedrock | Same model family, pay per request |
+| VPS app process | Lambda + Function URL (IAM auth) | Scales to zero; private without API Gateway |
+| VPS disk | S3 (frozen corpus snapshot) | Read-only input; no live ingestion |
 
-## Retrieval eval results
+## Full results
 
-51 labeled topics (38 news, 13 earnings), TREC qrels, `ir_measures` — the same labels, metrics,
-and scoring code as the parent repo's CI gate. Corpus: 1,963 news articles across 10 US tickers;
-1,934 earnings-release chunks (EDGAR 8-K, NVDA and AAPL). The in-repo stack runs hybrid BM25 +
-dense ahead of rerank; S3 Vectors is dense-only, so the cloud path has no lexical leg — the eval
-quantifies what that costs, per corpus. The current cloud rows use Bedrock Titan V2 embeddings.
-The *earlier run* rows used `text-embedding-3-small` via OpenRouter while Bedrock was unavailable
-(ADR-0001). The two runs are identical apart from the embedding model, so they double as an
-embedding ablation.
+<details>
+<summary>All four metrics, both cloud runs, hypothesis verdicts and caveats</summary>
+
+51 labeled topics (38 news, 13 earnings), TREC qrels, `ir_measures`. The labels, metrics and
+scoring code are the same as the original project's CI gate. Corpus: 1,963 news articles across
+10 US tickers and 1,934 earnings-release chunks (EDGAR 8-K, NVDA and AAPL). The current cloud
+rows use Bedrock Titan V2 embeddings. The *earlier run* rows used `text-embedding-3-small` via
+OpenRouter while Bedrock was unavailable. The two runs are identical apart from the embedding
+model, so they double as an embedding ablation.
 
 | Corpus | Config | R@5 | R@20 | MRR | nDCG@10 |
 |---|---|---|---|---|---|
-| news | in-repo dense (Qdrant) | 0.295 | 0.612 | 0.620 | 0.521 |
-| news | in-repo hybrid+rerank (Qdrant) | 0.527 | 0.799 | 0.857 | 0.786 |
+| news | original dense (Qdrant) | 0.295 | 0.612 | 0.620 | 0.521 |
+| news | original hybrid+rerank (Qdrant) | 0.527 | 0.799 | 0.857 | 0.786 |
 | news | cloud dense (S3 Vectors, Titan V2) | 0.258 | 0.488 | 0.622 | 0.483 |
 | news | cloud dense+rerank (Titan V2 + Bedrock Rerank 3.5) | 0.304 | 0.488 | 0.700 | 0.547 |
 | news | *earlier run: cloud dense (text-embedding-3-small)* | 0.310 | 0.654 | 0.641 | 0.544 |
 | news | *earlier run: cloud dense+rerank (OpenRouter)* | 0.411 | 0.654 | 0.806 | 0.679 |
-| earnings | in-repo dense (Qdrant) | 0.335 | 0.529 | 0.671 | 0.531 |
-| earnings | in-repo hybrid+rerank (Qdrant) | 0.529 | 0.674 | 1.000 | 0.834 |
+| earnings | original dense (Qdrant) | 0.335 | 0.529 | 0.671 | 0.531 |
+| earnings | original hybrid+rerank (Qdrant) | 0.529 | 0.674 | 1.000 | 0.834 |
 | earnings | cloud dense (S3 Vectors, Titan V2) | 0.364 | 0.551 | 0.769 | 0.630 |
 | earnings | cloud dense+rerank (Titan V2 + Bedrock Rerank 3.5) | 0.375 | 0.551 | 0.769 | 0.673 |
 | earnings | *earlier run: cloud dense (text-embedding-3-small)* | 0.321 | 0.534 | 0.789 | 0.629 |
 | earnings | *earlier run: cloud dense+rerank (OpenRouter)* | 0.364 | 0.534 | 0.761 | 0.639 |
 
-**Verdicts (Titan V2 run; full reasoning in the [write-up](eval/results/qnt-483-bedrock-eval.md)):**
+**Hypotheses, stated before running ([PRD §7](docs/PRD.md#7-eval-plan)), and verdicts on the
+Titan V2 run:**
 
-- **H1 (news) — PARTIALLY CONFIRMED (3 of 4 metrics).** Cloud dense+rerank lands between in-repo
-  dense-only and in-repo hybrid+rerank on R@5, MRR and nDCG@10. It misses on R@20 (0.488 vs.
-  in-repo dense's 0.612), which only measures the dense candidate pool: Titan V2's news recall is
-  weaker. With text-embedding-3-small, H1 held on all four metrics.
-- **H2 (earnings) — REFUTED.** The premise ("rerank lift stays marginal on earnings, in-repo or
-  cloud") fails: in-repo earnings rerank lift is the largest of either corpus/config (MRR reaches
-  1.000). Cloud's earnings rerank lift is small under *both* embedding models (Titan V2: R@5
-  +0.011, MRR 0.000, nDCG@10 +0.043). So the embedding space is unlikely to be the cause; the
-  likelier one is reranking pure-dense candidates rather than the in-repo's BM25-fused set.
-- **H3 (embeddings) — CONFIRMED for news; earnings consistent in direction.** Dense-only numbers
-  differ from in-repo on both corpora, as expected for a different embedding space. The rerank
-  delta is positive on news R@5/MRR/nDCG@10, matching in-repo. On earnings it's positive on
-  R@5/nDCG@10 and flat on MRR. The earlier run's earnings MRR reversal (−0.028) didn't reproduce,
-  consistent with single-query noise. R@20 is excluded, because with `top_k = top_n = 20` rerank
-  can't change top-20 membership.
-- **Embedding ablation (new).** Titan V2 vs. text-embedding-3-small, dense-only: news drops on
-  every metric (R@20 −0.166), earnings is effectively tied. This is the regime finding on a
-  new axis: news is sensitive to every stack choice, while earnings behaves like a filter problem.
+- **H1 (news): cloud vector + rerank lands between the original vector-only and hybrid + rerank. —
+  Partially confirmed (3 of 4 metrics).** It holds on R@5, MRR and nDCG@10. It misses on R@20
+  (0.488 vs. 0.612), which only measures the vector candidate pool: Titan V2's news recall is
+  weaker. With `text-embedding-3-small` it held on all four.
+- **H2 (earnings): rerank lift stays marginal on both stacks, because earnings is a
+  "dense-saturated" corpus. — Refuted.** The original stack's earnings lift is the largest of any
+  corpus or config (MRR reaches 1.000). The cloud lift is small under *both* embedding models, so
+  the cause is more likely reranking pure-vector candidates than the corpus itself.
+- **H3 (embeddings): vector-only results differ from the original, but rerank moves metrics in the
+  same direction. — Confirmed for news; consistent for earnings.** Rerank is positive on news
+  R@5/MRR/nDCG@10. On earnings it's positive on R@5/nDCG@10 and flat on MRR. R@20 is excluded,
+  because with `top_k = top_n = 20` rerank can't change which documents make the top 20.
 
-**Caveats, stated plainly.**
+**Caveats.**
 
-- **The earnings sample is small.** 13 topics means a single query slipping from rank 1 to rank 2
-  shifts MRR by about 0.04, which is larger than most of the cloud earnings deltas. No
-  confidence intervals or paired tests were computed; treat the earnings deltas as directional,
-  not settled. The earlier run's MRR reversal not reproducing is a direct example.
-- **Two variables change at once.** In-repo hybrid+rerank vs. cloud dense+rerank differs in both
-  the embedding model *and* the candidate pool (BM25 removed). H3 partially separates them, but
-  the clean ablation — an in-repo dense+rerank run with no BM25 leg — was not produced.
+- **The earnings sample is small.** With 13 topics, one query slipping from rank 1 to rank 2 shifts
+  MRR by about 0.04, which is larger than most of the cloud earnings deltas. No confidence intervals
+  or paired tests were computed, so treat earnings deltas as directional. The earlier run's
+  earnings MRR drop (−0.028) didn't reproduce on Titan V2, which is a direct example.
+- **Two variables change at once.** The original hybrid + rerank and the cloud vector + rerank
+  differ in both the embedding model *and* the candidate pool (no BM25). The two cloud runs isolate
+  the embedding model; a clean "original stack minus BM25" run was not produced.
+
+Full reasoning: [`eval/results/qnt-483-bedrock-eval.md`](eval/results/qnt-483-bedrock-eval.md)
+(Titan V2) and [`eval/results/qnt-270-cloud-eval.md`](eval/results/qnt-270-cloud-eval.md)
+(earlier run).
+
+</details>
 
 ## Reproduce
 
@@ -129,7 +169,7 @@ embedding ablation.
 - **The corpus snapshot bundle, staged under `data/`.** It is not in this repo (news rows carry
   vendor-sourced article bodies) and `terraform apply` fails without it — `terraform/s3.tf` reads
   `data/manifest.json` at plan time. Produce it with the monorepo's export script
-  (equity-data-agent, QNT-265), pointing the output directory at this repo's `data/`. Expected
+  ([equity-data-agent](https://github.com/noahwins-ng/equity-data-agent)), pointing the output directory at this repo's `data/`. Expected
   layout: `data/{manifest.json, corpus/{news,earnings}.jsonl, labels/{retrieval.yaml,retrieval_qrels.trec}}`.
   Verify the upload afterwards with `scripts/verify_s3_checksums.sh`.
 
@@ -158,7 +198,7 @@ cd ..
 # Sample query (SigV4-signed POST to the IAM-authenticated Function URL)
 uv run python scripts/invoke_retrieval.py news "Did Apple strike a chip deal with Intel?"
 
-# The retrieval eval -- prints the cloud rows of the results table above. Paced at one query
+# The retrieval eval -- prints the cloud rows of the results table. Paced at one query
 # per 21 s for Rerank 3.5's 3 req/min quota, so ~18 min.
 uv run python eval/cloud_eval.py
 
@@ -194,6 +234,8 @@ Pricing basis and the per-line breakdown: [`docs/PRD.md` §8](docs/PRD.md#8-budg
 [![Demo: stand-up → index → query → eval → teardown](https://i.ytimg.com/vi/fdJ5s8kmU-w/hqdefault.jpg)](https://youtu.be/fdJ5s8kmU-w)
 
 `terraform apply` → index both corpora → sample queries → the eval run → `terraform destroy`.
+Recorded during the OpenRouter period (ADR-0001). The flow is the same on Bedrock; only the
+model-serving calls differ.
 
 ## Project docs
 
