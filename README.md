@@ -1,107 +1,71 @@
 # Equity RAG on AWS
 
-A question-answering system over stock-market documents: news about 10 US companies and
-earnings releases from NVIDIA and Apple. Ask *"What was NVIDIA's data center revenue last
-quarter?"* and it retrieves NVIDIA's recent earnings releases and answers *"$62.3 billion"* (Q4
-FY2026).
+A question-answering system over stock-market documents: news about 10 US companies and earnings
+releases from NVIDIA and Apple. Ask *"What was NVIDIA's data center revenue last quarter?"* and it
+finds the right earnings releases and answers *"$62.3 billion"* (Q4 FY2026).
 
-The retrieval pipeline was first built and evaluated in
-[equity-data-agent](https://github.com/noahwins-ng/equity-data-agent) on self-hosted Qdrant, with
-hybrid keyword + vector search and Cohere rerank. This repo rebuilds it on pay-per-request AWS
-(S3 Vectors, Lambda, Bedrock, all in Terraform) and scores it with the **identical** eval to
-measure what the move cost. The stack exists only for a demo window. Total AWS spend was under $1,
-and teardown to zero is verified.
+The pipeline was first built and evaluated in
+[equity-data-agent](https://github.com/noahwins-ng/equity-data-agent). This repo rebuilds it on
+pay-per-request AWS (S3 Vectors, Lambda, Bedrock, all Terraform) and re-runs the **identical** eval
+to measure what the move cost. Total spend: under $1. The stack is torn down after each demo.
 
-- **Finding:** the cloud version beats the original's vector-only baseline on ranking quality
-  (nDCG@10) for both document sets, but neither cloud run reaches the original's hybrid + rerank.
-  S3 Vectors has no keyword search, and that's the biggest gap. Among the cloud choices, the
-  embedding model mattered most on news and hardly at all on earnings.
-- **How it's engineered:** a $20 spend cap enforced by an automatic IAM deny, not just an email; a
-  documented switch to another vendor when Bedrock was broken for this account, and back once it was
-  fixed; and a design that works inside non-adjustable Bedrock quotas as low as 3 requests/minute.
-
-[Demo video](https://youtu.be/fdJ5s8kmU-w) · [Full eval write-up](eval/results/qnt-483-bedrock-eval.md) ·
+[Demo video](https://youtu.be/fdJ5s8kmU-w) · [Eval write-up](eval/results/qnt-483-bedrock-eval.md) ·
 [Spec](docs/PRD.md) · [Decision records](docs/decisions/)
 
-## Headline result
+## Result
 
-nDCG@10 (ranking quality of the top 10, higher is better) on the same 51 labeled questions:
+Ranking quality (nDCG@10, higher is better) on the same 51 labeled questions:
 
-| Corpus | Original: vector only | Original: hybrid + rerank | Cloud: vector + rerank |
+| Documents | Original: vector only | Original: hybrid + rerank | AWS: vector + rerank |
 |---|---|---|---|
-| News (1,963 articles, 38 questions) | 0.521 | **0.786** | 0.547 |
-| Earnings (1,934 release chunks, 13 questions) | 0.531 | **0.834** | 0.673 |
+| News (1,963 articles) | 0.521 | **0.786** | 0.547 |
+| Earnings (1,934 chunks) | 0.531 | **0.834** | 0.673 |
 
-- **Keyword search is the biggest missing piece.** The cloud stack trails the original by 0.24 on
-  news and 0.16 on earnings. S3 Vectors has no keyword (BM25) search, and reranking alone doesn't
-  make up for it.
-- **Among the cloud choices, the embedding model matters most on news.** The same pipeline with
-  OpenAI's `text-embedding-3-small` instead of Titan V2 scored 0.679 instead of 0.547, closing about
-  half the gap.
-- **On earnings, the embedding model barely matters** (0.639 vs. 0.673), and cloud rerank adds
-  only +0.04. Earnings retrieval behaves like a `(company, quarter)` lookup more than a ranking
-  problem.
+- **Missing keyword search is the biggest cost.** S3 Vectors is vector-only, and reranking doesn't
+  make up for it: AWS trails the original by 0.24 on news and 0.16 on earnings.
+- **The embedding model matters most on news.** Switching to OpenAI's `text-embedding-3-small`
+  lifts news to 0.679, closing about half the gap.
+- **On earnings, the embedding model barely matters** (0.639 vs. 0.673), and AWS rerank adds only
+  +0.04, versus +0.30 for the original's hybrid + rerank. The earnings gap most likely comes from
+  losing keyword search, not from the embeddings.
 
-The two document sets behave differently under every change tested: news needs good ranking,
-while earnings is mostly a lookup. Testing whether that difference survives a completely
-different stack was the point of this experiment, and it did.
-[All four metrics, both cloud runs, hypotheses and caveats ↓](#full-results)
-
-## Architecture
+## How it works
 
 ```
-                        ┌────────────────────────── Terraform (us-west-2) ─────────────────────────┐
-                        │                                                                          │
- source project         │   S3 bucket          index job (Lambda, sliced)        S3 Vectors        │
- frozen snapshot ─────────► corpus/*.jsonl ──► Bedrock Titan Embeddings V2 ───► index per corpus   │
- + labels + manifest    │   labels/            → PutVectors (keyed by chunk id, (news, earnings)   │
-                        │   manifest.json      ticker/date metadata)                  │            │
-                        │                                                             ▼            │
- eval client (local) ─────► Function URL ──► retrieval Lambda: dense top-k (S3 Vectors)            │
- ir_measures + labels   │   (AWS_IAM auth)  → Bedrock Cohere Rerank 3.5 → [optional gpt-oss-20b]   │
-                        │                                      │                                   │
-                        │   CloudWatch  ◄── logs + latency/invocation/error metrics                │
-                        │   AWS Budgets ◄── USD 20 alert + IAM deny hard-stop (covers Bedrock)     │
-                        └──────────────────────────────────────────────────────────────────────────┘
+snapshot ──► S3 ──► index job (Lambda) ──► Titan V2 embeddings ──► S3 Vectors
+                                              (one index per document set)
+
+eval client ──► Function URL (IAM auth) ──► retrieval Lambda:
+                  1. vector search, top 20 (S3 Vectors)
+                  2. rerank (Cohere Rerank 3.5, Bedrock)
+                  3. answer (gpt-oss-20b, Bedrock, optional)
+
+Guardrails: $20 budget → automatic IAM deny · CloudWatch logs/metrics
 ```
 
-Everything inside the box is defined in Terraform and destroyed together. Component breakdown:
-[`docs/architecture/system-overview.md`](docs/architecture/system-overview.md).
+| Original (Hetzner VPS) | AWS |
+|---|---|
+| Qdrant, always on | S3 Vectors: no idle cost, but no keyword search |
+| Original embedding model | Bedrock Titan V2: a deliberately different embedding space |
+| Cohere Rerank 3.5 | Same model via Bedrock, so rerank isn't a variable |
+| gpt-oss-20b on Groq | Same model via Bedrock |
+| App process on the VPS | Lambda + Function URL: scales to zero, private via IAM |
 
-**What changed from the original stack**, which runs on a Hetzner VPS:
+More detail: [`docs/architecture/system-overview.md`](docs/architecture/system-overview.md).
 
-| Original | AWS | Why |
-|---|---|---|
-| Qdrant (always-on) | S3 Vectors | No idle cost; pay per use. Vector-only: no keyword (BM25) search |
-| Original embedding model | Bedrock Titan Text Embeddings V2 (512-dim) | Deliberately a different embedding space |
-| Cohere Rerank 3.5 (Cohere API) | Cohere Rerank 3.5 via Bedrock | Same model, so rerank isn't a variable |
-| gpt-oss-20b on Groq | gpt-oss-20b via Bedrock | Same model family, pay per request |
-| VPS app process | Lambda + Function URL (IAM auth) | Scales to zero; private without API Gateway |
-| VPS disk | S3 (frozen corpus snapshot) | Read-only input; no live ingestion |
+## Engineering highlights
 
-## Engineering decisions worth reading
-
-- **A cost cap that enforces itself.** AWS Budgets alerts at $10 and, at $20, automatically attaches
-  an IAM deny policy to the operator's IAM user. It blocks Bedrock, S3 Vectors and Lambda calls but
-  never delete actions, so `terraform destroy` still works after it fires.
-  ([`terraform/main.tf`](terraform/main.tf))
-- **A vendor outage, handled with a written decision both ways.** Bedrock's console showed every
-  model as authorized, but every real call failed: a provisioning defect left this account's quota
-  at 0. Model serving moved to OpenRouter ([ADR-0001](docs/decisions/0001-bedrock-to-openrouter.md)),
-  then moved back once AWS fixed it ([ADR-0002](docs/decisions/0002-bedrock-model-serving-restored.md)).
-  The switch-back removed the project's only secret and put model spend back under the $20 cap.
-- **Designed to fit hard quotas.** Bedrock allows 60 embedding and 3 rerank requests per minute on
-  this account, and neither can be raised. The index job runs in 750-row slices that each fit one
-  15-minute Lambda run, and re-running a slice is safe because writes are keyed upserts. The eval
-  client paces itself at one query per 21 seconds.
-- **An eval built to be trusted.** The labels, metrics and scoring code are frozen and copied from
-  the original project. Results are reported per corpus and never blended, the two cloud runs are
-  kept side by side as an embedding comparison, and the caveats are stated rather than hidden.
-- **Teardown verified, not assumed.** Everything is Terraform with no console-created resources.
-  After `terraform destroy`, the state list is empty and no project resources remain (checked by
-  service). Next-day Cost Explorer showed about $0 after the earlier teardown.
-- **Lessons kept.** Each phase has a retro with an invariant-to-guard audit ([`docs/retros/`](docs/retros/)).
-  One example: a "verify with a real call, not the console status" rule written after the Bedrock outage.
+- **Self-enforcing $20 cap.** At $20, AWS Budgets attaches an IAM deny that blocks new Bedrock, S3
+  Vectors and Lambda calls but not teardown ([`terraform/main.tf`](terraform/main.tf)).
+- **Vendor outage, handled both ways.** Bedrock showed "authorized" while every call failed, so
+  serving moved to OpenRouter, then back once AWS fixed it
+  ([ADR-0001](docs/decisions/0001-bedrock-to-openrouter.md), [ADR-0002](docs/decisions/0002-bedrock-model-serving-restored.md)).
+- **Built for hard quotas.** With limits of 60 embedding and 3 rerank requests per minute, indexing
+  runs in safe-to-retry slices and the eval paces itself.
+- **Trustworthy eval.** Frozen labels and scoring code from the original project, results per
+  document set, and caveats stated up front.
+- **Verified teardown.** Everything is Terraform. After `terraform destroy`, the state is empty and
+  no resources remain.
 
 ## Full results
 
@@ -162,9 +126,23 @@ Full reasoning: [`eval/results/qnt-483-bedrock-eval.md`](eval/results/qnt-483-be
 
 </details>
 
-## Reproduce
+## Run it yourself
 
-### Prerequisites
+Needs AWS credentials with Bedrock access in `us-west-2`, Terraform, `uv`, and the corpus snapshot in
+`data/` (produced by equity-data-agent's export script).
+
+```sh
+cp terraform/example.tfvars terraform/terraform.tfvars     # set alert email + IAM user
+terraform -chdir=terraform init && terraform -chdir=terraform apply   # incl. $20 guard
+# index both document sets (~65 min, sliced for Bedrock quotas; loop below)
+uv run python eval/cloud_eval.py                           # ~18 min, prints results
+terraform -chdir=terraform destroy                         # state list -> empty
+```
+
+<details>
+<summary>Full step-by-step instructions</summary>
+
+**Prerequisites**
 
 - [Terraform](https://developer.hashicorp.com/terraform/install) and the
   [AWS CLI](https://aws.amazon.com/cli/), with credentials for a single IAM user configured via
@@ -183,7 +161,7 @@ Full reasoning: [`eval/results/qnt-483-bedrock-eval.md`](eval/results/qnt-483-be
   layout: `data/{manifest.json, corpus/{news,earnings}.jsonl, labels/{retrieval.yaml,retrieval_qrels.trec}}`.
   Verify the upload afterwards with `scripts/verify_s3_checksums.sh`.
 
-### Stand up → index → query → eval → tear down
+**Stand up → index → query → eval → tear down**
 
 ```sh
 uv sync
@@ -208,7 +186,7 @@ cd ..
 # Sample query (SigV4-signed POST to the IAM-authenticated Function URL)
 uv run python scripts/invoke_retrieval.py news "Did Apple strike a chip deal with Intel?"
 
-# The retrieval eval -- prints the cloud rows of the results table. Paced at one query
+# The retrieval eval -- prints the AWS rows of the full results table. Paced at one query
 # per 21 s for Rerank 3.5's 3 req/min quota, so ~18 min.
 uv run python eval/cloud_eval.py
 
@@ -221,11 +199,15 @@ No console-created resources — everything is defined in `terraform/` and `terr
 returns the account to zero. Teardown is verified, not assumed: empty `terraform state list` plus
 an empty next-day Cost Explorer.
 
-## Cost model
+</details>
 
-All spend, Bedrock included, is backstopped by a Budgets alert (USD 10 / 20) and a Budgets Action
-that attaches an IAM deny policy at USD 20 (Bedrock invoke, S3 Vectors, Lambda invoke), scoped so
-`terraform destroy` still works.
+## Cost
+
+Under $1 in total: about $0.10 of AWS infrastructure and about $0.10 of Bedrock model calls. The
+$20 budget guard covers all of it.
+
+<details>
+<summary>Cost breakdown</summary>
 
 | Line item | Observed / estimated |
 |---|---|
@@ -237,17 +219,11 @@ that attaches an IAM deny policy at USD 20 (Bedrock invoke, S3 Vectors, Lambda i
 | Bedrock — Rerank 3.5 + gpt-oss-20b (eval sweep, spot checks) | ~$0.10 est. ($2.00/1K rerank queries) |
 | *Historical:* OpenRouter (ADR-0001 period) — one index build + eval sweeps | ~$6.10 observed on the key's cumulative `/credits` usage — an upper bound |
 
-Pricing basis and the per-line breakdown: [`docs/PRD.md` §8](docs/PRD.md#8-budget-and-teardown).
+Pricing basis: [`docs/PRD.md` §8](docs/PRD.md#8-budget-and-teardown).
 
-## Demo video
+</details>
 
-[![Demo: stand-up → index → query → eval → teardown](https://i.ytimg.com/vi/fdJ5s8kmU-w/hqdefault.jpg)](https://youtu.be/fdJ5s8kmU-w)
-
-`terraform apply` → index both corpora → sample queries → the eval run → `terraform destroy`.
-Recorded during the OpenRouter period (ADR-0001). The flow is the same on Bedrock; only the
-model-serving calls differ.
-
-## Project docs
+## Docs
 
 - [`docs/PRD.md`](docs/PRD.md) — spec: goals, seam contract, eval plan, budget.
 - [`docs/decisions/0001-bedrock-to-openrouter.md`](docs/decisions/0001-bedrock-to-openrouter.md) —
@@ -256,3 +232,5 @@ model-serving calls differ.
   the move back once the quota defect was fixed, and designing around its low quotas.
 - [`docs/retros/`](docs/retros/) — one retrospective per phase, each with an invariant → guard audit.
 - [`docs/architecture/system-overview.md`](docs/architecture/system-overview.md) — the system as built.
+- Demo video: [youtu.be/fdJ5s8kmU-w](https://youtu.be/fdJ5s8kmU-w). Recorded during the OpenRouter
+  period; the flow is the same on Bedrock.
