@@ -6,8 +6,9 @@ finds the right earnings releases and answers *"$62.3 billion"* (Q4 FY2026).
 
 The pipeline was first built and evaluated in
 [equity-data-agent](https://github.com/noahwins-ng/equity-data-agent). This repo rebuilds it on
-pay-per-request AWS (S3 Vectors, Lambda, Bedrock, all Terraform) and re-runs the **identical** eval
-to measure what the move cost. Total spend: under $1. The stack is torn down after each demo.
+pay-per-request AWS (S3 Vectors, Lambda, Bedrock, all Terraform) to test whether a scale-to-zero
+serverless stack can match a tuned self-hosted one, scored with the **identical** eval. Total
+spend: under $1. The stack is torn down after each demo.
 
 [Demo video](https://youtu.be/fdJ5s8kmU-w) · [Eval write-up](eval/results/qnt-483-bedrock-eval.md) ·
 [Spec](docs/PRD.md) · [Decision records](docs/decisions/)
@@ -16,15 +17,19 @@ to measure what the move cost. Total spend: under $1. The stack is torn down aft
 
 Ranking quality (nDCG@10, higher is better) on the same 51 labeled questions:
 
-| Documents | Original: vector only | Original: hybrid + rerank | AWS: vector + rerank |
-|---|---|---|---|
-| News (1,963 articles) | 0.521 | **0.786** | 0.547 |
-| Earnings (1,934 chunks) | 0.531 | **0.834** | 0.673 |
+| Documents | Original: vector only | Original: hybrid + rerank | AWS: vector only | AWS: vector + rerank |
+|---|---|---|---|---|
+| News (1,963 articles) | 0.521 | **0.786** | 0.483 | 0.547 |
+| Earnings (1,934 chunks) | 0.531 | **0.834** | 0.630 | 0.673 |
 
-- **Missing keyword search is the biggest cost.** S3 Vectors is vector-only, and reranking doesn't
-  make up for it: AWS trails the original by 0.24 on news and 0.16 on earnings.
-- **The embedding model matters most on news.** Switching to OpenAI's `text-embedding-3-small`
-  lifts news to 0.679, closing about half the gap.
+**Bottom line:** the serverless rebuild costs almost nothing when idle but ranks worse than the original
+(0.24 lower on news, 0.16 on earnings). The two levers are keyword search and, on news, the
+embedding model.
+
+- **No keyword search costs quality on both document sets.** S3 Vectors is vector-only, and
+  reranking doesn't make up for it.
+- **On news, the embedding model matters as much.** Switching from Titan V2 to OpenAI's
+  `text-embedding-3-small` lifts news from 0.547 to 0.679, closing about half the gap.
 - **On earnings, the embedding model barely matters** (0.639 vs. 0.673), and AWS rerank adds only
   +0.04, versus +0.30 for the original's hybrid + rerank. The earnings gap most likely comes from
   losing keyword search, not from the embeddings.
@@ -52,6 +57,16 @@ Guardrails: $20 budget → automatic IAM deny · CloudWatch logs/metrics
 | App process on the VPS | Lambda + Function URL: scales to zero, private via IAM |
 
 More detail: [`docs/architecture/system-overview.md`](docs/architecture/system-overview.md).
+
+**Repo layout**
+
+```
+terraform/   all AWS infrastructure: S3, S3 Vectors, Lambda, IAM, Budgets, CloudWatch
+lambda/      index_job/ (embed + write vectors), retrieval_service/ (search, rerank, answer)
+eval/        scoring code, frozen labels, results write-ups
+scripts/     sample query, S3 checksum check
+docs/        spec, architecture, decision records, retros
+```
 
 ## Engineering highlights
 
