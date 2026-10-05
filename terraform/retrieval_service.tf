@@ -12,6 +12,7 @@
 resource "null_resource" "retrieval_service_build" {
   triggers = {
     handler_sha      = filesha256("${path.module}/../lambda/retrieval_service/handler.py")
+    hybrid_sha       = filesha256("${path.module}/../lambda/retrieval_service/hybrid.py")
     requirements_sha = filesha256("${path.module}/../lambda/retrieval_service/requirements.txt")
   }
 
@@ -54,9 +55,9 @@ resource "aws_iam_role" "retrieval_service" {
 
 # Least-privilege: read the corpus (to join dense hits back to source text -- S3 Vectors
 # metadata doesn't carry it, see lambda/retrieval_service/handler.py), query (not put)
-# both S3 Vectors indices, and log. No s3vectors:GetVectors -- returnMetadata is never
-# requested, so that extra permission (required only when reading metadata back) isn't
-# needed. Bedrock InvokeModel (embed, rerank) and Converse (generation -- authorized by
+# both S3 Vectors indices, and log. s3vectors:GetVectors is added for QNT-312's ticker
+# filter: QueryVectors requires it whenever a metadata filter is set (returnMetadata is
+# still never requested). Bedrock InvokeModel (embed, rerank) and Converse (generation -- authorized by
 # the same bedrock:InvokeModel action) are scoped to exactly the three models used.
 resource "aws_iam_role_policy" "retrieval_service" {
   name = "retrieval-service-permissions"
@@ -84,7 +85,7 @@ resource "aws_iam_role_policy" "retrieval_service" {
       {
         Sid      = "QueryVectors"
         Effect   = "Allow"
-        Action   = ["s3vectors:QueryVectors"]
+        Action   = ["s3vectors:QueryVectors", "s3vectors:GetVectors"]
         Resource = [for idx in aws_s3vectors_index.corpus : idx.index_arn]
       },
       {

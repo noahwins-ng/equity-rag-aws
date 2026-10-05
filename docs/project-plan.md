@@ -56,6 +56,12 @@ is what a reader who opens the repo cold uses to understand what was built and w
     again across two embedding models, H3 confirmed for news / consistent for earnings;
     new embedding-ablation finding (swap moves news, not earnings) —
     `eval/results/qnt-483-bedrock-eval.md`
+- [x] QNT-312: add ticker scoping + BM25/RRF hybrid leg to the retrieval Lambda
+  - **Triggered by:** README review traced the gap to missing keyword search; the original's
+    code showed it also scopes every search to the ticker, which the cloud stack never did.
+    ADR-0003 reverses the PRD §4 "no BM25" non-goal
+  - Results: news gap closed (hybrid+rerank 0.787 vs. 0.786 nDCG@10), earnings within 0.07;
+    ticker scoping was the biggest single fix — `eval/results/qnt-312-hybrid-eval.md`
 
 ## Phase 3 — Observability & Demo Wrap-up
 
