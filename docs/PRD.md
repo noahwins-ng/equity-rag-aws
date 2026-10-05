@@ -70,10 +70,11 @@ of the corpora — not an artifact of one stack.
 
 ## 4. Non-goals
 
-- **No hybrid/BM25 on the cloud path.** S3 Vectors is dense-only; the cloud runs
-  dense + rerank. This is a *documented tradeoff*, and the eval quantifies exactly what
-  the missing BM25 leg costs (expectation: cloud news numbers land between the in-repo
-  dense-only and hybrid+rerank rows).
+- ~~**No hybrid/BM25 on the cloud path.**~~ *Reversed by [ADR-0003](decisions/0003-ticker-scoping-and-bm25-hybrid.md)
+  (QNT-312).* Originally a documented tradeoff (S3 Vectors is dense-only) measured by the
+  QNT-270/QNT-483 evals. QNT-312 adds an opt-in BM25 + RRF leg built in memory by the
+  retrieval Lambda, plus the per-ticker scoping the original always used, so both effects
+  can be measured. Still zero idle cost.
 - **No live ingestion.** The corpus is a frozen snapshot (build-time handoff from the
   monorepo, QNT-265). No Dagster, no schedulers, no freshness.
 - **No agent.** This is the retrieval + generation slice only — no LangGraph, no intent

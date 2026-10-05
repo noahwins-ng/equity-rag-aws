@@ -12,6 +12,7 @@
 - [ADR template](decisions/TEMPLATE.md)
 - [ADR-0001: Drop AWS Bedrock for OpenRouter as the model-serving layer](decisions/0001-bedrock-to-openrouter.md) — 2026-08-26, unresolved AWS Bedrock account-quota provisioning defect (superseded by ADR-0002)
 - [ADR-0002: Move model serving back from OpenRouter to AWS Bedrock](decisions/0002-bedrock-model-serving-restored.md) — 2026-10-02, quota defect resolved; design around non-adjustable 60/3/100 req/min quotas
+- [ADR-0003: Add ticker scoping and a BM25 + RRF hybrid leg to the retrieval Lambda](decisions/0003-ticker-scoping-and-bm25-hybrid.md) — 2026-10-05, reverses the PRD §4 "no BM25" non-goal; parity table with the original
 
 ## Retrospectives
 <!-- One per completed milestone; retro appends here. -->

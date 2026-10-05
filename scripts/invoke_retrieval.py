@@ -4,7 +4,9 @@ URL. SigV4-signs the POST with the caller's own AWS credentials -- the endpoint 
 AWS_IAM auth (terraform/retrieval_service.tf) -- the same signing pattern the QNT-270 eval
 client will use to score the cloud endpoint.
 
-Usage: uv run python scripts/invoke_retrieval.py <news|earnings> "<query text>"
+Usage: uv run python scripts/invoke_retrieval.py <news|earnings> "<query text>" [TICKER [MODE]]
+
+QNT-312: optional TICKER scopes retrieval to one company; MODE is dense (default) or hybrid.
 """
 
 from __future__ import annotations
@@ -28,13 +30,18 @@ def _function_url() -> str:
 
 
 def main() -> int:
-    if len(sys.argv) != 3:
-        print(f"usage: {sys.argv[0]} <news|earnings> <query>", file=sys.stderr)
+    if not 3 <= len(sys.argv) <= 5:
+        print(f"usage: {sys.argv[0]} <news|earnings> <query> [TICKER [MODE]]", file=sys.stderr)
         return 1
     corpus, query = sys.argv[1], sys.argv[2]
+    payload: dict[str, str] = {"corpus": corpus, "query": query}
+    if len(sys.argv) >= 4:
+        payload["ticker"] = sys.argv[3]
+    if len(sys.argv) == 5:
+        payload["mode"] = sys.argv[4]
 
     url = _function_url()
-    body = json.dumps({"corpus": corpus, "query": query}).encode()
+    body = json.dumps(payload).encode()
 
     request = AWSRequest(
         method="POST", url=url, data=body, headers={"Content-Type": "application/json"}

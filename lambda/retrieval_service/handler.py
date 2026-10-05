@@ -9,6 +9,12 @@ S3 Vectors metadata doesn't carry the candidates' source text (see lambda/index_
 -- only corpus/ticker/date/doc_id[/chunk_index/section] is stored there), so rerank and
 generation need it joined back from corpus/{corpus}.jsonl. This handler loads that file into
 a per-container point_id -> row cache on cold start, reused across warm invocations.
+
+QNT-312 adds two optional request fields, matching the original's served path (ADR-0003):
+``ticker`` scopes both retrieval legs to one company (S3 Vectors metadata filter + BM25 over
+that ticker's rows), and ``mode: "hybrid"`` fuses the dense ranking with a BM25 ranking
+(``hybrid.py``) via RRF before rerank. BM25 is built in memory from the same cached corpus
+rows -- no extra S3 object or always-on resource.
 """
 
 from __future__ import annotations
@@ -18,6 +24,7 @@ import os
 
 import boto3
 from botocore.config import Config
+from hybrid import bm25_ranking, reciprocal_rank_fusion
 
 REGION = os.environ.get("AWS_REGION", "us-west-2")
 CORPUS_BUCKET = os.environ["CORPUS_BUCKET"]
@@ -63,15 +70,25 @@ def _embed_query(text: str) -> list[float]:
     return json.loads(resp["body"].read())["embedding"]
 
 
-def _dense_search(corpus: str, query_vector: list[float], top_k: int) -> list[dict]:
+def _dense_search(
+    corpus: str, query_vector: list[float], top_k: int, ticker: str | None
+) -> list[dict]:
+    kwargs = {"filter": {"ticker": {"$eq": ticker}}} if ticker else {}
     resp = s3vectors.query_vectors(
         vectorBucketName=VECTOR_BUCKET,
         indexName=corpus,
         queryVector={"float32": query_vector},
         topK=top_k,
         returnDistance=True,
+        **kwargs,
     )
     return resp["vectors"]
+
+
+def _bm25_text(row: dict) -> str:
+    # Mirrors the original's searchable text minus the earnings `title` field, which the
+    # snapshot doesn't carry (ADR-0003). News rows already hold headline + body in `text`.
+    return f"{row.get('section') or ''} {row['text']}"
 
 
 def _rerank(query: str, candidates: list[dict], top_n: int) -> list[dict]:
@@ -135,17 +152,38 @@ def lambda_handler(event: dict, _context) -> dict:
     top_k = int(body.get("top_k", DEFAULT_DENSE_TOP_K))
     top_n = int(body.get("top_n", DEFAULT_RERANK_TOP_N))
     generate = bool(body.get("generate", True))
+    # Normalised once so both legs agree: "" means unscoped, same as absent.
+    ticker = body.get("ticker") or None
+    if ticker is not None and not isinstance(ticker, str):
+        return _response(400, {"error": f"ticker must be a string: {ticker!r}"})
+    mode = body.get("mode", "dense")
+    if mode not in ("dense", "hybrid"):
+        return _response(400, {"error": f"unknown mode: {mode!r}"})
 
     corpus_rows = _load_corpus(corpus)
     query_vector = _embed_query(query)
-    dense_hits = _dense_search(corpus, query_vector, top_k)
+    dense_hits = _dense_search(corpus, query_vector, top_k, ticker)
+    distance_of = {hit["key"]: hit.get("distance") for hit in dense_hits}
+
+    # Same shape as the original's hybrid_run_ids: top_k from each leg, RRF, then the top
+    # top_k fused ids go to rerank.
+    candidate_ids = [hit["key"] for hit in dense_hits]
+    if mode == "hybrid":
+        scoped = {
+            pid: _bm25_text(row)
+            for pid, row in corpus_rows.items()
+            if ticker is None or row["ticker"] == ticker
+        }
+        bm25_ids = bm25_ranking(scoped, query, limit=top_k)
+        fused = reciprocal_rank_fusion([candidate_ids, bm25_ids])
+        candidate_ids = [pid for pid, _ in fused[:top_k]]
 
     candidates = []
-    for hit in dense_hits:
-        row = corpus_rows.get(hit["key"])
+    for pid in candidate_ids:
+        row = corpus_rows.get(pid)
         if row is None:
             continue
-        candidates.append({**row, "dense_distance": hit.get("distance")})
+        candidates.append({**row, "dense_distance": distance_of.get(pid)})
 
     # Every dense hit's point_id failed to join against corpus_rows (e.g. the S3 corpus
     # snapshot and S3 Vectors index have drifted out of sync) -- rerank rejects an empty

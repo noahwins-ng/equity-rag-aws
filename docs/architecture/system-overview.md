@@ -24,8 +24,8 @@ How the system actually works *now*. Kept current by `change-scope` (on scope ch
  + labels + manifest    │   labels/            → PutVectors (point_id-keyed,    (news, earnings)   │
                         │   manifest.json      corpus/ticker/date metadata)           │            │
                         │                                                             ▼            │
- eval client (local) ─────► Function URL ──► retrieval Lambda: dense top-k (S3 Vectors)            │
- ir_measures + labels   │   (AWS_IAM auth)  → Bedrock Cohere Rerank 3.5 → [optional gpt-oss-20b]   │
+ eval client (local) ─────► Function URL ──► retrieval Lambda: dense top-k (S3 Vectors, [ticker]) │
+ ir_measures + labels   │   (AWS_IAM auth)  [+ BM25 → RRF] → Bedrock Rerank 3.5 → [gpt-oss-20b]    │
                         │                                      │                                   │
                         │   CloudWatch  ◄── logs + latency/invocation/error metrics                │
                         │   AWS Budgets ◄── USD 20 alert + auto-deny hard-stop (covers Bedrock)    │
@@ -43,7 +43,7 @@ Full narrative + rationale for each service choice: PRD §6.
 | Terraform skeleton + budget guard | AWS provider (us-west-2), local state backend, USD 10/20 Budgets alerts + auto-deny hard-stop at USD 20 | **QNT-266 — shipped** |
 | S3 corpus bucket | Frozen snapshot (corpus JSONL, labels, manifest) staged from the monorepo export | **QNT-267 — shipped** |
 | Index job (Lambda, invoked per corpus slice) | Corpus → Bedrock Titan V2 → S3 Vectors, one index per corpus | **QNT-268 — shipped; Bedrock QNT-483** |
-| Retrieval service (Lambda + Function URL, `AWS_IAM` auth) | Dense search (S3 Vectors) → Bedrock Cohere Rerank 3.5 → Bedrock gpt-oss-20b generation | **QNT-269 — shipped; Bedrock QNT-483** |
+| Retrieval service (Lambda + Function URL, `AWS_IAM` auth) | Dense search (S3 Vectors) [+ in-memory BM25, RRF-fused] → Bedrock Cohere Rerank 3.5 → Bedrock gpt-oss-20b generation; optional per-ticker scoping | **QNT-269 — shipped; Bedrock QNT-483; hybrid + ticker QNT-312** |
 | Eval client (local) | ir_measures scoring against the cloud endpoint, per-corpus | **QNT-270 — shipped** |
 | CloudWatch | Logs (Terraform-managed log group) + latency/invocation/error metrics for the retrieval Lambda | **QNT-271 — shipped** |
 
@@ -59,14 +59,17 @@ Full narrative + rationale for each service choice: PRD §6.
   equity-data-agent's `agent.evals.retrieval_eval`) plus a committed copy of the labels
   (`eval/labels/`). Not a deployed component; `cloud_eval.py` (QNT-270) SigV4-signs one
   request per labeled topic against the deployed Function URL, reconstructs dense-only and
-  dense+rerank rankings from the response, and scores both per-corpus. Results + hypothesis
-  assessment (H1/H2/H3) live in `eval/results/qnt-483-bedrock-eval.md` (Titan V2, current) and
+  dense+rerank rankings from the response, and scores both per-corpus. Since QNT-312 it sends
+  each topic's ticker and makes a second, `mode=hybrid` call, so it also scores
+  hybrid+rerank. Results live in `eval/results/qnt-312-hybrid-eval.md` (ticker-scoped,
+  hybrid), `eval/results/qnt-483-bedrock-eval.md` (Titan V2, unscoped) and
   `eval/results/qnt-270-cloud-eval.md` (OpenRouter embeddings, kept for comparison).
 - **S3 Vectors** — two indices, one per corpus (`news`, `earnings`), dense-only, keyed by
   `point_id`, tagged with corpus/ticker/date metadata. Populated by the QNT-268 index job
   (512-dim cosine, Bedrock Titan Text Embeddings V2). Queried (not written) by
   the QNT-269 retrieval service, which joins hits back to source text from the S3 corpus
-  bucket (S3 Vectors metadata doesn't carry the full text).
+  bucket (S3 Vectors metadata doesn't carry the full text). A request with `ticker` adds a
+  metadata filter on `ticker`, which needs `s3vectors:GetVectors` (ADR-0003).
 - No relational/document store — everything is file-based (S3) or vector-native (S3 Vectors).
 
 ## External surfaces
@@ -74,7 +77,10 @@ Full narrative + rationale for each service choice: PRD §6.
 - **Lambda Function URL (`AWS_IAM` auth) → retrieval Lambda** — the only runtime endpoint.
   Request resolves the target corpus (per the topic's scope in `labels/retrieval.yaml`), does
   dense search (S3 Vectors) → Bedrock Cohere Rerank 3.5 → optional Bedrock gpt-oss-20b generation,
-  returns reranked dense results + a generated answer. IAM auth (not API Gateway) keeps it
+  returns reranked results + a generated answer. Optional request fields (QNT-312, ADR-0003):
+  `ticker` scopes both retrieval legs to one company, and `mode: "hybrid"` adds a BM25 ranking
+  (built in memory from the cached corpus rows), fused with the dense ranking via RRF (k = 60)
+  before rerank. IAM auth (not API Gateway) keeps it
   private — only callers with `lambda:InvokeFunctionUrl` (the operator's own AWS credentials)
   can invoke it (no reserved-concurrency cap — this account's total Lambda concurrency quota
   is only 10, too low to reserve any of it). Rerank's 3 requests/min Bedrock quota caps it at

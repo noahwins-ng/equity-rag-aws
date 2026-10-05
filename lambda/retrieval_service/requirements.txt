@@ -2,3 +2,6 @@
 # lambda/index_job, QNT-268) so this Lambda's boto3 build is the one the s3vectors client
 # was verified against locally. Lambda's built-in boto3 predates S3 Vectors (GA Dec 2025).
 boto3==1.43.78
+# QNT-312: BM25 for the hybrid leg -- same library + version as the dev group in
+# pyproject.toml and the original repo (pulls numpy, aarch64 wheel via build.sh).
+rank-bm25==0.2.2
