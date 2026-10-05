@@ -32,8 +32,7 @@ the top 10 is in the ideal order (most relevant documents first):
 
 ### Why AWS ranks lower
 
-Both stacks rerank 20 candidates with the same model, so the gap is in **which 20 candidates**
-the reranker gets:
+Both stacks rerank with the same model, so the gap is in **which candidates** the reranker gets:
 
 1. **No keyword search (both sets).** The original merges vector search with BM25 keyword
    search. S3 Vectors is vector-only, so it misses exact-term matches (tickers, `Q4 FY2026`),
