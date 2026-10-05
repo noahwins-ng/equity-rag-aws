@@ -7,15 +7,20 @@ finds the right earnings releases and answers *"$62.3 billion"* (Q4 FY2026).
 The pipeline was first built and evaluated in
 [equity-data-agent](https://github.com/noahwins-ng/equity-data-agent). This repo rebuilds it on
 pay-per-request AWS (S3 Vectors, Lambda, Bedrock, all Terraform) to test whether a scale-to-zero
-serverless stack can match a tuned self-hosted one, scored with the **identical** eval. Total
-spend: under $1. The stack is torn down after each demo.
+serverless stack can match a tuned self-hosted one, scored with the **identical** eval. AWS +
+Bedrock spend: under $1 (plus ~$6 on OpenRouter while Bedrock was broken). The stack is torn down
+after each demo.
+
+**Stack:** Terraform · AWS Lambda · S3 Vectors · Bedrock (Titan V2, Cohere Rerank 3.5,
+gpt-oss-20b) · Python · IR evaluation (`ir_measures`: nDCG, MRR, recall)
 
 [Demo video](https://youtu.be/fdJ5s8kmU-w) · [Eval write-up](eval/results/qnt-483-bedrock-eval.md) ·
 [Spec](docs/PRD.md) · [Decision records](docs/decisions/)
 
 ## Result
 
-Ranking quality (nDCG@10, higher is better) on the same 51 labeled questions:
+Ranking quality on the same 51 labeled questions. nDCG@10 runs from 0 to 1, where 1.0 means
+the top 10 is in the ideal order (most relevant documents first):
 
 | Documents | Original: vector only | Original: hybrid + rerank | AWS: vector only | AWS: vector + rerank |
 |---|---|---|---|---|
@@ -23,16 +28,23 @@ Ranking quality (nDCG@10, higher is better) on the same 51 labeled questions:
 | Earnings (1,934 chunks) | 0.531 | **0.834** | 0.630 | 0.673 |
 
 **Bottom line:** the serverless rebuild costs almost nothing when idle but ranks worse than the original
-(0.24 lower on news, 0.16 on earnings). The two levers are keyword search and, on news, the
-embedding model.
+(0.24 lower on news, 0.16 on earnings).
 
-- **No keyword search costs quality on both document sets.** S3 Vectors is vector-only, and
-  reranking doesn't make up for it.
-- **On news, the embedding model matters as much.** Switching from Titan V2 to OpenAI's
-  `text-embedding-3-small` lifts news from 0.547 to 0.679, closing about half the gap.
-- **On earnings, the embedding model barely matters** (0.639 vs. 0.673), and AWS rerank adds only
-  +0.04, versus +0.30 for the original's hybrid + rerank. The earnings gap most likely comes from
-  losing keyword search, not from the embeddings.
+### Why AWS ranks lower
+
+Both stacks rerank 20 candidates with the same model, so the gap is in **which 20 candidates**
+the reranker gets:
+
+1. **No keyword search (both sets).** The original merges vector search with BM25 keyword
+   search. S3 Vectors is vector-only, so it misses exact-term matches (tickers, `Q4 FY2026`),
+   and rerank can't recover what never made the top 20. On earnings, rerank adds +0.30 on the
+   original's list but only +0.04 on AWS's.
+2. **Weaker embeddings (news only).** Swapping Titan V2 for OpenAI's `text-embedding-3-small`
+   lifts news from 0.547 to 0.679, which closes about half the gap. On earnings the two are
+   tied.
+
+**Next experiment:** the original stack without BM25, to separate the two effects. On AWS, the
+fix is a BM25 index stored in S3 and queried by the Lambda.
 
 ## How it works
 
@@ -58,22 +70,12 @@ Guardrails: $20 budget → automatic IAM deny · CloudWatch logs/metrics
 
 More detail: [`docs/architecture/system-overview.md`](docs/architecture/system-overview.md).
 
-**Repo layout**
-
-```
-terraform/   all AWS infrastructure: S3, S3 Vectors, Lambda, IAM, Budgets, CloudWatch
-lambda/      index_job/ (embed + write vectors), retrieval_service/ (search, rerank, answer)
-eval/        scoring code, frozen labels, results write-ups
-scripts/     sample query, S3 checksum check
-docs/        spec, architecture, decision records, retros
-```
-
 ## Engineering highlights
 
 - **Self-enforcing $20 cap.** At $20, AWS Budgets attaches an IAM deny that blocks new Bedrock, S3
   Vectors and Lambda calls but not teardown ([`terraform/main.tf`](terraform/main.tf)).
-- **Vendor outage, handled both ways.** Bedrock showed "authorized" while every call failed, so
-  serving moved to OpenRouter, then back once AWS fixed it
+- **Vendor defect, handled both ways.** Bedrock reported access granted while every call failed
+  (a zero-quota defect on the account), so serving moved to OpenRouter, then back once AWS fixed it
   ([ADR-0001](docs/decisions/0001-bedrock-to-openrouter.md), [ADR-0002](docs/decisions/0002-bedrock-model-serving-restored.md)).
 - **Built for hard quotas.** With limits of 60 embedding and 3 rerank requests per minute, indexing
   runs in safe-to-retry slices and the eval paces itself.
@@ -216,10 +218,20 @@ an empty next-day Cost Explorer.
 
 </details>
 
+## Repo layout
+
+```
+terraform/   all AWS infrastructure: S3, S3 Vectors, Lambda, IAM, Budgets, CloudWatch
+lambda/      index_job/ (embed + write vectors), retrieval_service/ (search, rerank, answer)
+eval/        scoring code, frozen labels, results write-ups
+scripts/     sample query, S3 checksum check
+docs/        spec, architecture, decision records, retros
+```
+
 ## Cost
 
-Under $1 in total: about $0.10 of AWS infrastructure and about $0.10 of Bedrock model calls. The
-$20 budget guard covers all of it.
+About $0.20 on AWS: about $0.10 of infrastructure and about $0.10 of Bedrock model calls, all
+under the $20 budget guard. Separately, about $6 went to OpenRouter while Bedrock was broken.
 
 <details>
 <summary>Cost breakdown</summary>
