@@ -19,41 +19,26 @@ gpt-oss-20b) · Python · IR evaluation (`ir_measures`: nDCG, MRR, recall)
 
 ## Result
 
-Ranking quality (nDCG@10) on the same 51 labeled questions. It runs from 0 to 1, where 1.0
-means the top 10 is in the ideal order (most relevant documents first):
+Ranking quality (nDCG@10, 0–1, higher is better) on the same 51 labeled questions:
 
-| Documents | Original: hybrid + rerank | AWS first build: vector + rerank | AWS final: hybrid + rerank |
-|---|---|---|---|
-| News (1,963 articles) | 0.786 | 0.547 | **0.787** |
-| Earnings (1,934 chunks) | **0.834** | 0.673 | 0.765 |
-
-**Bottom line:** the serverless rebuild now matches the original on news and gets within 0.07
-on earnings, while costing almost nothing when idle.
-
-### What closed the gap
-
-The first AWS build ranked 0.24 lower on news and 0.16 lower on earnings. Two missing pieces
-explained most of it:
-
-| Step (nDCG@10) | News | Earnings |
+| | News | Earnings |
 |---|---|---|
-| First build: vector search + rerank, all companies | 0.547 | 0.673 |
-| + search only the question's company | 0.679 (+0.13) | 0.751 (+0.08) |
-| + BM25 keyword search, merged with RRF | 0.787 (+0.11) | 0.765 (+0.01) |
+| Original: hybrid + rerank | 0.786 | 0.834 |
+| AWS first build: vector search + rerank | 0.547 | 0.673 |
+| + search only the question's company | 0.679 | 0.751 |
+| **+ BM25 keyword search (final)** | **0.787** | **0.765** |
 
-1. **Company scoping, the biggest fix.** The original filters every search to the
-   question's ticker. The first AWS build searched all companies at once, so other
-   companies' documents crowded out the right ones.
-2. **Keyword search.** S3 Vectors is vector-only, so BM25 runs inside the Lambda over the
-   rows it already holds in memory. It adds no infrastructure and keeps idle cost at zero. It
-   matters on news (+0.11) and barely on earnings (+0.01).
+**Bottom line:** the serverless rebuild matches the original on news and gets within 0.07
+on earnings, at almost no idle cost.
 
-**Caveat:** the labels mark a document relevant if it contains certain keywords, which
-favors keyword search. The BM25 gain is an upper bound for real questions.
+- **Company scoping was the biggest fix.** The original filters every search to the
+  question's ticker; the first AWS build searched all companies, so other companies'
+  documents crowded out the right ones.
+- **Keyword search runs inside the Lambda.** S3 Vectors is vector-only, so BM25 is built
+  in memory: no new infrastructure, still zero idle cost.
 
-**Remaining earnings gap (0.07):** not isolated yet. The leading suspect is release titles,
-which the original's keyword search uses and this snapshot lacks. With only 13 earnings
-questions, part of it is noise.
+Caveats: the labels are keyword-based, which favors BM25. The remaining earnings gap may
+come from release titles missing from the snapshot, plus noise from only 13 questions.
 
 ## How it works
 
