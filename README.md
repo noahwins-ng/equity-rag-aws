@@ -36,8 +36,8 @@ Both stacks rerank with the same model, so the gap is in **which candidates** th
 
 1. **No keyword search (both sets).** The original merges vector search with BM25 keyword
    search. S3 Vectors is vector-only, so it misses exact-term matches (tickers, `Q4 FY2026`),
-   and rerank can't recover what never made the top 20. On earnings, rerank adds +0.30 on the
-   original's list but only +0.04 on AWS's.
+   and rerank can't recover what never made the top 20. On earnings, the original's keyword
+   search + rerank adds +0.30 over its vector-only score; AWS's rerank alone adds +0.04.
 2. **Weaker embeddings (news only).** Swapping Titan V2 for OpenAI's `text-embedding-3-small`
    lifts news from 0.547 to 0.679, which closes about half the gap. On earnings the two are
    tied.
